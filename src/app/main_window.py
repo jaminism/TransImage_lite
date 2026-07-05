@@ -37,6 +37,7 @@ from core.image_document import ImageDocument
 from core.processors.io import SUPPORTED_EXTENSIONS, open_image, save_image
 from core.processors.printer import fit_to_page
 from core.processors.text_overlay import add_text
+from core.processors.transform import rotate_image
 from workers.async_tasks import ProcessWorker
 
 logger = logging.getLogger(__name__)
@@ -95,6 +96,7 @@ class MainWindow(QMainWindow):
         self._enhance_baseline: Image.Image | None = None
         self._text_baseline: Image.Image | None = None
         self._quality_baseline: Image.Image | None = None
+        self._resize_baseline: Image.Image | None = None
         self._active_panel_index = PANEL_RESIZE
         self._last_tool_row = 0
         self._row_kind: dict[int, str] = {}
@@ -135,6 +137,7 @@ class MainWindow(QMainWindow):
             if hasattr(panel, "apply_requested"):
                 panel.apply_requested.connect(self._on_apply_requested)
 
+        self.resize_panel.angle_apply_requested.connect(self._on_angle_apply)
         self.enhance_panel.reset_requested.connect(self._on_enhance_reset)
         self.text_panel.overlay_changed.connect(self._on_text_overlay_changed)
         self.text_panel.text_apply_requested.connect(self._on_text_apply)
@@ -324,6 +327,8 @@ class MainWindow(QMainWindow):
             self.text_panel.emit_current_overlay()
         elif index == PANEL_QUALITY:
             self._quality_baseline = self.document.current
+        elif index == PANEL_RESIZE:
+            self._resize_baseline = self.document.current
 
     def _select_tool_row(self, panel_index: int) -> None:
         row = next((r for r, idx in self._tool_rows.items() if idx == panel_index), None)
@@ -428,6 +433,32 @@ class MainWindow(QMainWindow):
 
         try:
             result = fn(source, **kwargs)
+            self.document.apply_result(result)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "처리 실패", str(exc))
+            return
+        if self._active_panel_index == PANEL_RESIZE:
+            # 크기 조절/아이콘 회전·반전처럼 절대 각도 baseline과 무관한 액션이 커밋되면,
+            # 그 결과가 각도 직접 입력의 새로운 "정상" 기준이 되어야 한다.
+            self._resize_baseline = self.document.current
+        self._refresh_canvas()
+        self._update_actions_enabled()
+
+    def _on_angle_apply(self, angle: float) -> None:
+        """각도 직접 입력은 아이콘 회전과 달리 baseline 기준 절대 각도로 취급한다.
+
+        document.current(직전 결과)에 매번 상대 회전을 적용하면, 예를 들어 5도를
+        적용한 뒤 0도로 "되돌리려" 해도 이미 5도 회전된 이미지에 0도 회전(무변화)이
+        적용될 뿐이라 원래 상태로 복귀하지 않는다. 이 도구에 들어왔을 때(또는 마지막
+        크기조절/아이콘 회전·반전 시점)의 이미지를 baseline으로 고정해두고 항상 그
+        지점에서부터 다시 계산해야, 0도 적용이 정확히 원래대로 되돌아간다.
+        """
+        source = self._resize_baseline if self._resize_baseline is not None else self.document.current
+        if source is None:
+            QMessageBox.information(self, "알림", "먼저 이미지를 열어주세요.")
+            return
+        try:
+            result = rotate_image(source, angle)
             self.document.apply_result(result)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "처리 실패", str(exc))
