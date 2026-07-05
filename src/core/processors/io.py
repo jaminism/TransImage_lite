@@ -4,6 +4,11 @@ from pathlib import Path
 
 from PIL import Image, ImageOps
 
+# 사용자가 직접 고른 로컬 사진을 여는 데스크톱 앱이라 신뢰할 수 없는 입력(DoS)을 가정할
+# 필요가 없다 — Pillow의 기본 "decompression bomb" 픽셀 수 제한을 해제해 고해상도
+# 사진(수천만~1억+ 픽셀)에서도 경고 없이 정상 동작하게 한다.
+Image.MAX_IMAGE_PIXELS = None
+
 SUPPORTED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".webp"}
 
 

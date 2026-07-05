@@ -114,20 +114,70 @@ QPushButton#primaryButton:pressed {
 }
 
 /* ---------- 입력 컨트롤 ---------- */
-QLineEdit, QSpinBox, QComboBox {
+QLineEdit, QSpinBox, QComboBox, QFontComboBox {
     background-color: #1b1c1e;
     border: 1px solid #3a3c42;
     border-radius: 6px;
     padding: 6px 8px;
+    min-height: 20px;
 }
 
-QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QFontComboBox:focus {
     border: 1px solid #7c5cff;
 }
 
-QComboBox::drop-down {
+QComboBox::drop-down, QFontComboBox::drop-down {
     border: none;
     width: 20px;
+}
+
+/* QSpinBox 기본 padding이 up/down 버튼 영역까지 침범해 클릭이 잘 안 되는 문제를
+   방지하기 위해 버튼 서브컨트롤의 위치/크기를 명시적으로 지정한다. */
+QSpinBox {
+    padding-right: 20px;
+}
+
+QSpinBox::up-button, QSpinBox::down-button {
+    subcontrol-origin: border;
+    width: 18px;
+    border: none;
+    background-color: #2f3136;
+}
+
+QSpinBox::up-button {
+    subcontrol-position: top right;
+    border-top-right-radius: 6px;
+}
+
+QSpinBox::down-button {
+    subcontrol-position: bottom right;
+    border-bottom-right-radius: 6px;
+}
+
+QSpinBox::up-button:hover, QSpinBox::down-button:hover {
+    background-color: #3a3c42;
+}
+
+QSpinBox::up-button:pressed, QSpinBox::down-button:pressed {
+    background-color: #7c5cff;
+}
+
+QSpinBox::up-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 5px solid #e4e6eb;
+    width: 0;
+    height: 0;
+}
+
+QSpinBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #e4e6eb;
+    width: 0;
+    height: 0;
 }
 
 /* ---------- 슬라이더 ---------- */
@@ -186,5 +236,14 @@ QProgressBar {
 
 QProgressBar::chunk {
     background-color: #7c5cff;
+    border-radius: 4px;
+}
+
+/* ---------- 툴팁 ---------- */
+QToolTip {
+    background-color: #2c2440;
+    color: #f2f2f7;
+    border: 1px solid #7c5cff;
+    padding: 4px 8px;
     border-radius: 4px;
 }

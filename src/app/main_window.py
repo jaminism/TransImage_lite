@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
@@ -10,6 +11,8 @@ from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
+    QHBoxLayout,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QMainWindow,
@@ -18,6 +21,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStackedWidget,
     QToolBar,
+    QWidget,
 )
 
 from app.canvas_widget import CanvasWidget
@@ -217,6 +221,8 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar("주요 작업")
         toolbar.setMovable(False)
         toolbar.setIconSize(QSize(20, 20))
+        toolbar.addWidget(self._build_brand_widget())
+        toolbar.addSeparator()
         for action in (
             self.open_action,
             self.save_action,
@@ -228,6 +234,27 @@ class MainWindow(QMainWindow):
         ):
             toolbar.addAction(action)
         self.addToolBar(toolbar)
+
+    def _build_brand_widget(self) -> QWidget:
+        app_icon_path = Path(__file__).parent.parent / "resources" / "icons" / "app.ico"
+
+        brand = QWidget()
+        layout = QHBoxLayout(brand)
+        layout.setContentsMargins(6, 0, 16, 0)
+        layout.setSpacing(8)
+
+        icon_label = QLabel()
+        if app_icon_path.exists():
+            icon_label.setPixmap(QPixmap(str(app_icon_path)).scaled(
+                22, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            ))
+        layout.addWidget(icon_label)
+
+        name_label = QLabel("Trans Pro")
+        name_label.setStyleSheet("font-size: 15px; font-weight: 700; color: #ffffff;")
+        layout.addWidget(name_label)
+
+        return brand
 
     def _build_status_bar(self) -> None:
         self.status_progress = QProgressBar()
@@ -365,6 +392,7 @@ class MainWindow(QMainWindow):
             size=params.get("size", 48),
             color=params.get("color", (255, 255, 255, 255)),
             rotation=params.get("rotation", 0.0),
+            font_family=params.get("font_family", "Arial"),
         )
 
     def _on_text_apply(self, params: dict) -> None:
@@ -383,6 +411,7 @@ class MainWindow(QMainWindow):
             "color": params.get("color", (255, 255, 255, 255)),
             "rotation": params.get("rotation", 0.0),
             "shadow": params.get("shadow", True),
+            "font_path": params.get("font_path"),
         }
         try:
             self.document.apply(add_text, **kwargs)
@@ -392,6 +421,7 @@ class MainWindow(QMainWindow):
         self.canvas.clear_text_overlay()
         self._refresh_canvas()
         self._update_actions_enabled()
+        self.statusBar().showMessage("텍스트가 추가되었습니다.")
 
     # ------------------------------------------------------------------ 지우개
     def _on_erase_stroke_finished(self, image: Image.Image) -> None:

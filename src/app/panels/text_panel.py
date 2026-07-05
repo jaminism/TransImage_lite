@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Signal
-from PySide6.QtGui import QColor
+from PySide6.QtGui import QColor, QFont, QFontDatabase
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
+    QFileDialog,
+    QFontComboBox,
     QFormLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -15,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.icons import icon
+from core.processors.fonts import resolve_windows_font_path
 from core.processors.text_overlay import add_text
 
 
@@ -33,19 +37,30 @@ class TextPanel(QWidget):
         super().__init__()
 
         self._color = QColor(255, 255, 255)
+        self._custom_fonts: dict[str, str] = {}  # family 이름 -> 사용자가 추가한 폰트 파일 경로
 
         self.text_input = QLineEdit()
         self.text_input.setPlaceholderText("텍스트 입력")
         self.text_input.textChanged.connect(self._emit_overlay_changed)
 
+        self.font_combo = QFontComboBox()
+        self.font_combo.setCurrentFont(QFont("Arial"))
+        self.font_combo.currentFontChanged.connect(self._emit_overlay_changed)
+
+        add_font_btn = QPushButton(" 폰트 추가...")
+        add_font_btn.setToolTip("내 컴퓨터의 폰트 파일(.ttf/.otf)을 추가합니다")
+        add_font_btn.clicked.connect(self._on_add_font)
+
         self.size_spin = QSpinBox()
         self.size_spin.setRange(8, 300)
         self.size_spin.setValue(48)
+        self.size_spin.setMinimumWidth(90)
         self.size_spin.valueChanged.connect(self._emit_overlay_changed)
 
         self.rotation_spin = QSpinBox()
         self.rotation_spin.setRange(-180, 180)
         self.rotation_spin.setValue(0)
+        self.rotation_spin.setMinimumWidth(90)
         self.rotation_spin.valueChanged.connect(self._emit_overlay_changed)
 
         self.shadow_check = QCheckBox("그림자 효과")
@@ -59,10 +74,13 @@ class TextPanel(QWidget):
         apply_btn = QPushButton(" 적용 (드래그한 위치에 합성)")
         apply_btn.setIcon(icon("check"))
         apply_btn.setObjectName("primaryButton")
+        apply_btn.setMinimumHeight(36)
         apply_btn.clicked.connect(self._on_apply)
 
         form = QFormLayout()
         form.addRow("텍스트", self.text_input)
+        form.addRow("폰트", self.font_combo)
+        form.addRow("", add_font_btn)
         form.addRow("크기(px)", self.size_spin)
         form.addRow("회전(도)", self.rotation_spin)
         form.addRow("색상", self.color_btn)
@@ -80,12 +98,20 @@ class TextPanel(QWidget):
         self._emit_overlay_changed()
 
     def current_params(self) -> dict:
+        family = self.font_combo.currentFont().family()
         return {
             "text": self.text_input.text(),
             "size": self.size_spin.value(),
             "color": (self._color.red(), self._color.green(), self._color.blue(), 255),
             "rotation": float(self.rotation_spin.value()),
+            "font_family": family,
+            "font_path": self._resolve_font_path(family),
         }
+
+    def _resolve_font_path(self, family: str) -> str | None:
+        if family in self._custom_fonts:
+            return self._custom_fonts[family]
+        return resolve_windows_font_path(family)
 
     def _emit_overlay_changed(self, *_args) -> None:
         self.overlay_changed.emit(self.current_params())
@@ -101,10 +127,23 @@ class TextPanel(QWidget):
             self._update_color_button()
             self._emit_overlay_changed()
 
-    def _on_apply(self) -> None:
-        text = self.text_input.text().strip()
-        if not text:
+    def _on_add_font(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "폰트 파일 추가", "", "폰트 파일 (*.ttf *.otf *.ttc)")
+        if not path:
             return
+        font_id = QFontDatabase.addApplicationFont(path)
+        families = QFontDatabase.applicationFontFamilies(font_id) if font_id != -1 else []
+        if not families:
+            QMessageBox.warning(self, "폰트 추가 실패", "폰트 파일을 불러올 수 없습니다.")
+            return
+        family = families[0]
+        self._custom_fonts[family] = path
+        self.font_combo.setCurrentFont(QFont(family))
+        self._emit_overlay_changed()
+
+    def _on_apply(self) -> None:
+        # 빈 텍스트라도 신호는 항상 보낸다 — MainWindow가 사용자에게 명확한 안내를 띄운다.
+        # (여기서 조용히 무시하면 사용자 입장에서는 "적용 버튼이 안 먹는다"로 보인다.)
         params = self.current_params()
         params["shadow"] = self.shadow_check.isChecked()
         self.text_apply_requested.emit(params)

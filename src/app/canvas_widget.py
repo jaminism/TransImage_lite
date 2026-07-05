@@ -74,7 +74,10 @@ class CanvasWidget(QGraphicsView):
         self._erase_mode = False
         self._erasing = False
         self._brush_radius = 24
-        self._erase_image: Optional[Image.Image] = None
+        self._erase_source: Optional[Image.Image] = None  # 원본 해상도 (스트로크 종료 시에만 갱신)
+        self._erase_preview: Optional[Image.Image] = None  # 화면 표시용 축소 프록시 (드래그 중 실시간 편집)
+        self._erase_scale = 1.0  # preview_size = source_size * scale
+        self._stroke_points: list[tuple[float, float, float]] = []  # (원본 좌표 x, y, 반지름)
 
         self._busy_overlay = _BusyOverlay(self)
 
@@ -119,6 +122,7 @@ class CanvasWidget(QGraphicsView):
         size: int = 48,
         color: tuple[int, int, int, int] = (255, 255, 255, 255),
         rotation: float = 0.0,
+        font_family: str = "Arial",
     ) -> None:
         if self._pixmap_item is None:
             return
@@ -132,7 +136,7 @@ class CanvasWidget(QGraphicsView):
             self._scene.addItem(self._text_item)
 
         self._text_item.setText(text if text else " ")
-        font = QFont("Arial")
+        font = QFont(font_family or "Arial")
         font.setPixelSize(max(6, size))
         self._text_item.setFont(font)
         self._text_item.setBrush(QColor(color[0], color[1], color[2]))
@@ -150,45 +154,87 @@ class CanvasWidget(QGraphicsView):
             self._text_item = None
 
     # ------------------------------------------------------------------ 지우개
+    #
+    # 고해상도 사진(수천만 픽셀)을 마우스 이동마다 그대로 QImage로 변환하면 변환 1회에
+    # 수백MB가 필요해 MemoryError가 난다. 그래서 화면 표시는 축소된 프록시 이미지에서만
+    # 실시간으로 지우고, 실제 원본 해상도 반영은 스트로크가 끝났을 때(마우스 뗄 때) 딱
+    # 한 번만 수행한다.
+    _PREVIEW_MAX_DIM = 1600
+
     def begin_erase(self, image: Image.Image, brush_radius: int) -> None:
         self._erase_mode = True
         self._brush_radius = brush_radius
-        self._erase_image = image.convert("RGBA").copy()
+        self._erase_source = image.convert("RGBA")
+        self._stroke_points = []
+
+        max_dim = max(self._erase_source.size)
+        self._erase_scale = min(1.0, self._PREVIEW_MAX_DIM / max_dim) if max_dim > 0 else 1.0
+        if self._erase_scale < 1.0:
+            preview_size = (
+                max(1, round(self._erase_source.width * self._erase_scale)),
+                max(1, round(self._erase_source.height * self._erase_scale)),
+            )
+            self._erase_preview = self._erase_source.resize(preview_size, Image.BILINEAR)
+        else:
+            self._erase_preview = self._erase_source.copy()
+
         self.setDragMode(QGraphicsView.NoDrag)
         self._refresh_erase_pixmap()
+        if self._pixmap_item is not None:
+            # 프록시 크기가 원본과 다를 수 있으므로 sceneRect에 맞춰 뷰를 다시 맞춘다.
+            # (안 하면 mapToScene() 좌표가 이전 sceneRect 기준으로 어긋난다.)
+            self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
 
     def end_erase(self) -> None:
         self._erase_mode = False
         self._erasing = False
-        self._erase_image = None
+        self._erase_source = None
+        self._erase_preview = None
+        self._stroke_points = []
         self.setDragMode(QGraphicsView.ScrollHandDrag)
 
     def set_brush_radius(self, radius: int) -> None:
         self._brush_radius = radius
 
     def _refresh_erase_pixmap(self) -> None:
-        if self._erase_image is None:
+        if self._erase_preview is None:
             return
-        qimage = ImageQt(self._erase_image)
+        qimage = ImageQt(self._erase_preview)
         pixmap = QPixmap.fromImage(qimage)
         if self._pixmap_item is None:
             self._pixmap_item = self._scene.addPixmap(pixmap)
-            self._scene.setSceneRect(pixmap.rect())
         else:
             self._pixmap_item.setPixmap(pixmap)
+        # 프록시 크기가 원본 이미지 크기와 다르므로 mapToScene() 좌표가 프록시 픽셀
+        # 좌표와 일치하도록 매번 sceneRect를 프록시 크기에 맞춘다.
+        self._scene.setSceneRect(pixmap.rect())
 
     def _erase_at(self, view_pos) -> None:
-        if self._erase_image is None:
+        if self._erase_preview is None:
             return
         scene_pos = self.mapToScene(view_pos)
         x, y = scene_pos.x(), scene_pos.y()
-        r = self._brush_radius
-        draw = ImageDraw.Draw(self._erase_image)
-        draw.ellipse((x - r, y - r, x + r, y + r), fill=(0, 0, 0, 0))
+        r_preview = max(1.0, self._brush_radius * self._erase_scale)
+
+        draw = ImageDraw.Draw(self._erase_preview)
+        draw.ellipse((x - r_preview, y - r_preview, x + r_preview, y + r_preview), fill=(0, 0, 0, 0))
         self._refresh_erase_pixmap()
 
+        self._stroke_points.append((x / self._erase_scale, y / self._erase_scale, float(self._brush_radius)))
+
+    def _commit_erase_stroke(self) -> None:
+        if not self._stroke_points or self._erase_source is None:
+            return
+        result = self._erase_source.copy()
+        draw = ImageDraw.Draw(result)
+        for sx, sy, sr in self._stroke_points:
+            draw.ellipse((sx - sr, sy - sr, sx + sr, sy + sr), fill=(0, 0, 0, 0))
+        self._erase_source = result
+        self._stroke_points = []
+        self.erase_stroke_finished.emit(result.copy())
+
     def mousePressEvent(self, event: QMouseEvent) -> None:
-        if self._erase_mode and event.button() == Qt.LeftButton and self._erase_image is not None:
+        if self._erase_mode and event.button() == Qt.LeftButton and self._erase_preview is not None:
             self._erasing = True
             self._erase_at(event.position().toPoint())
             event.accept()
@@ -205,8 +251,7 @@ class CanvasWidget(QGraphicsView):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if self._erase_mode and self._erasing:
             self._erasing = False
-            if self._erase_image is not None:
-                self.erase_stroke_finished.emit(self._erase_image.copy())
+            self._commit_erase_stroke()
             event.accept()
             return
         super().mouseReleaseEvent(event)
