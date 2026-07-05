@@ -35,3 +35,29 @@ def test_brand_widget_has_object_names_for_transparent_background(qtbot):
     assert name_label is not None
     icon_label = window.findChild(QWidget, "brandIcon")
     assert icon_label is not None
+
+
+def test_sidebar_and_properties_cards_have_equal_gap_to_canvas_card(qtbot):
+    """QSplitter가 고정폭 카드의 sizeHint를 기준으로 section을 잘못 잡아, 사이드바-캔버스
+    간격이 캔버스-속성패널 간격보다 넓어 보이던 버그의 회귀 테스트. 두 간격이 같아야 한다."""
+    from PySide6.QtWidgets import QSplitter
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.resize(1360, 840)
+    window.show()
+    qtbot.wait(10)
+
+    splitter = window.centralWidget().findChild(QSplitter, "mainSplitter")
+    assert splitter is not None
+
+    sidebar_card = window.sidebar.parentWidget()
+    canvas_card = window.center_stack.parentWidget()
+    properties_card = window.properties_panel.parentWidget()
+
+    gap_left = canvas_card.geometry().left() - sidebar_card.geometry().right()
+    gap_right = properties_card.geometry().left() - canvas_card.geometry().right()
+
+    assert gap_left == gap_right
+    assert sidebar_card.width() == 208
+    assert properties_card.width() == 340

@@ -191,6 +191,12 @@ class MainWindow(QMainWindow):
         splitter.addWidget(canvas_card)
         splitter.addWidget(properties_card)
         splitter.setStretchFactor(1, 1)
+        # QSplitter는 addWidget 시점의 sizeHint를 기준으로 내부 section 크기를 정하는데,
+        # 고정폭 카드의 sizeHint(자식 콘텐츠 기준)가 실제 고정폭보다 커서, 위젯 자체는
+        # setFixedWidth대로 그려지지만 section에는 남는 공간이 생겨 카드와 핸들 사이에
+        # 빈 틈이 보였다. 고정폭 두 카드의 section 크기를 실제 고정폭과 정확히 맞추고,
+        # 남는 공간은 전부 캔버스 카드가 갖도록 명시적으로 지정한다.
+        splitter.setSizes([208, 10_000, 340])
 
         central = QWidget()
         central_layout = QHBoxLayout(central)
