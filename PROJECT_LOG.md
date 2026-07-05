@@ -172,3 +172,5 @@ scripts\build.bat
   - 신규 테스트 2개 추가(카드 래핑 구조, 브랜드 위젯 objectName), 전체 92개 테스트 통과
 - **처리 중 오버레이를 "AI 처리" 느낌의 애니메이션으로 교체** (이슈 [#13](https://github.com/jaminism/TransImage_lite/issues/13)): 품질 개선 등 비동기 처리 중 캔버스에 뜨던 단조로운 진행률 막대(`QProgressBar`, 인디터미닛)를, 위아래로 오가는 보라색 스캔 라인 + 화면 곳곳에서 무작위로 반짝이다 사라지는 스파클 파티클을 직접 그리는 커스텀 페인트 오버레이로 교체(`CanvasWidget._BusyOverlay`). `QTimer`(33ms 주기)로 스캔 위치와 파티클 나이를 갱신하며, `CanvasWidget.set_busy()`가 오버레이를 보이거나 숨길 때 `start_animation()`/`stop_animation()`을 명시적으로 호출해 보이지 않는 동안에는 타이머가 돌지 않도록 함
   - 신규 테스트 2개 추가(보이는 동안에만 타이머 동작, 스캔/스파클 상태 갱신), 전체 94개 테스트 통과
+- **텍스트 추가에 굵게(Bold)/기울임(Italic) 옵션 추가** (이슈 [#15](https://github.com/jaminism/TransImage_lite/issues/15)): 폰트 파일에 실제 Bold/Italic 변형이 있는지와 무관하게 항상 동작하도록, 폰트 교체 대신 렌더링 자체를 조작하는 방식으로 구현 — 굵게는 `ImageDraw.text`의 `stroke_width`로 획을 두껍게 그리고, 기울임은 렌더링된 텍스트 레이어를 어파인 시어(affine shear) 변환으로 기울임(`core/processors/text_overlay.py`의 `_italicize_layer`). 미리보기(`render_text_preview`)와 최종 합성(`add_text`)이 동일한 `_render_text_layer`를 공유하므로 두 옵션 모두 캔버스 드래그 미리보기에 즉시 반영됨. 텍스트 패널에 "굵게"/"기울임" 체크박스 추가(기본 해제, 초기화 시 함께 리셋)
+  - 신규 테스트 6개 추가(획 두께 비교, 시어 폭 비교, bold+italic 동시 적용, 패널 기본값/초기화), 전체 98개 테스트 통과

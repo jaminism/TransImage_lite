@@ -566,6 +566,8 @@ class MainWindow(QMainWindow):
             rotation=params.get("rotation", 0.0),
             font_path=params.get("font_path"),
             shadow=params.get("shadow", True),
+            bold=params.get("bold", False),
+            italic=params.get("italic", False),
         )
 
     def _on_text_apply(self, params: dict) -> None:
@@ -584,6 +586,8 @@ class MainWindow(QMainWindow):
             "color": params.get("color", (255, 255, 255, 255)),
             "rotation": params.get("rotation", 0.0),
             "shadow": params.get("shadow", True),
+            "bold": params.get("bold", False),
+            "italic": params.get("italic", False),
             "font_path": params.get("font_path"),
         }
         try:
