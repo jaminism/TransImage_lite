@@ -75,6 +75,7 @@ QStackedWidget > QWidget {
 
 QLabel {
     color: #e4e6eb;
+    background: transparent;
 }
 
 /* ---------- 버튼 ---------- */

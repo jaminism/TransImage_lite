@@ -69,6 +69,7 @@ class TextPanel(QWidget):
 
         self.shadow_check = QCheckBox("그림자 효과")
         self.shadow_check.setChecked(True)
+        self.shadow_check.toggled.connect(self._emit_overlay_changed)
 
         self.color_btn = QPushButton()
         self.color_btn.setIcon(icon("fill"))
@@ -119,6 +120,7 @@ class TextPanel(QWidget):
             "rotation": float(self.rotation_spin.value()),
             "font_family": family,
             "font_path": self._resolve_font_path(family),
+            "shadow": self.shadow_check.isChecked(),
         }
 
     def _resolve_font_path(self, family: str) -> str | None:
@@ -157,9 +159,7 @@ class TextPanel(QWidget):
     def _on_apply(self) -> None:
         # 빈 텍스트라도 신호는 항상 보낸다 — MainWindow가 사용자에게 명확한 안내를 띄운다.
         # (여기서 조용히 무시하면 사용자 입장에서는 "적용 버튼이 안 먹는다"로 보인다.)
-        params = self.current_params()
-        params["shadow"] = self.shadow_check.isChecked()
-        self.text_apply_requested.emit(params)
+        self.text_apply_requested.emit(self.current_params())
 
     def _on_reset(self) -> None:
         self.text_input.blockSignals(True)

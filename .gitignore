@@ -33,5 +33,6 @@ Thumbs.db
 # Reference template library (not part of this app's source)
 harness/
 
-# Design reference screenshot provided by the user (not app source)
+# Design reference / bug-report screenshots provided by the user (not app source)
 IMG_9186.png
+IMG_2.png

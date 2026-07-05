@@ -50,7 +50,7 @@ PANEL_BACKGROUND = 4
 
 TOOL_PANEL_LABELS = ["크기/회전", "보정", "품질 개선", "텍스트", "배경 제거"]
 
-# central_stack(QStackedWidget) 페이지 인덱스
+# center_stack(QStackedWidget) 페이지 인덱스 — 홈 화면 vs 캔버스
 STACK_HOME = 0
 STACK_EDITOR = 1
 
@@ -94,6 +94,7 @@ class MainWindow(QMainWindow):
         self._current_path: str | None = None
         self._enhance_baseline: Image.Image | None = None
         self._text_baseline: Image.Image | None = None
+        self._quality_baseline: Image.Image | None = None
         self._active_panel_index = PANEL_RESIZE
         self._last_tool_row = 0
         self._row_kind: dict[int, str] = {}
@@ -162,16 +163,19 @@ class MainWindow(QMainWindow):
             self.properties_panel.addWidget(panel)
         self.properties_panel.setFixedWidth(320)
 
-        editor_splitter = QSplitter(Qt.Horizontal)
-        editor_splitter.addWidget(self.sidebar)
-        editor_splitter.addWidget(self.canvas)
-        editor_splitter.addWidget(self.properties_panel)
-        editor_splitter.setStretchFactor(1, 1)
+        # 사이드바/속성 패널은 이미지 유무와 상관없이 항상 보인다 — 가운데 영역(홈 화면 vs
+        # 캔버스)만 전환한다. 이렇게 하면 이미지를 열기 전에도 어떤 도구들이 있는지 보이고,
+        # 도구를 먼저 눌러둔 채로 사진을 나중에 가져올 수도 있다.
+        self.center_stack = QStackedWidget()
+        self.center_stack.addWidget(self.home_widget)  # STACK_HOME
+        self.center_stack.addWidget(self.canvas)  # STACK_EDITOR
 
-        self.central_stack = QStackedWidget()
-        self.central_stack.addWidget(self.home_widget)  # STACK_HOME
-        self.central_stack.addWidget(editor_splitter)  # STACK_EDITOR
-        self.setCentralWidget(self.central_stack)
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(self.sidebar)
+        splitter.addWidget(self.center_stack)
+        splitter.addWidget(self.properties_panel)
+        splitter.setStretchFactor(1, 1)
+        self.setCentralWidget(splitter)
 
         self.sidebar.setCurrentRow(1)  # 첫 번째 실제 도구("크기 / 회전")
 
@@ -318,6 +322,8 @@ class MainWindow(QMainWindow):
         elif index == PANEL_TEXT:
             self._text_baseline = self.document.current
             self.text_panel.emit_current_overlay()
+        elif index == PANEL_QUALITY:
+            self._quality_baseline = self.document.current
 
     def _select_tool_row(self, panel_index: int) -> None:
         row = next((r for r, idx in self._tool_rows.items() if idx == panel_index), None)
@@ -340,7 +346,7 @@ class MainWindow(QMainWindow):
         self.document.load(image)
         self._current_path = path
         self._remember_recent_file(path)
-        self.central_stack.setCurrentIndex(STACK_EDITOR)
+        self.center_stack.setCurrentIndex(STACK_EDITOR)
         self._activate_tool_panel(self._active_panel_index)
         self._update_actions_enabled()
         self.statusBar().showMessage(f"열림: {path} ({image.width}x{image.height})")
@@ -369,7 +375,7 @@ class MainWindow(QMainWindow):
         self.document = ImageDocument()
         self._current_path = None
         self.canvas.set_image(None)
-        self.central_stack.setCurrentIndex(STACK_HOME)
+        self.center_stack.setCurrentIndex(STACK_HOME)
         self._update_actions_enabled()
         self.statusBar().showMessage("이미지를 열어주세요 (Ctrl+O)")
 
@@ -397,25 +403,40 @@ class MainWindow(QMainWindow):
             return
         self.canvas.set_image(preview)
 
+    def _apply_source_image(self) -> Image.Image | None:
+        """이 요청이 적용될 원본 이미지를 고른다.
+
+        품질개선 패널은 슬라이더 값을 바꿔가며 결과를 비교하는 용도라, 매번
+        document.current(직전 결과)에 누적 적용하면 두 번째부터는 이미 처리된
+        이미지 위에 다시 처리하는 꼴이라 값을 바꿔도 차이가 거의 안 보여
+        "고정된" 것처럼 보인다. 이 도구에 들어왔을 때의 baseline에서 매번 다시
+        적용해야 슬라이더 값 변경이 항상 눈에 보이는 결과로 이어진다.
+        """
+        if self._active_panel_index == PANEL_QUALITY and self._quality_baseline is not None:
+            return self._quality_baseline
+        return self.document.current
+
     def _on_apply_requested(self, fn, kwargs: dict, is_async: bool) -> None:
-        if self.document.current is None:
+        source = self._apply_source_image()
+        if source is None:
             QMessageBox.information(self, "알림", "먼저 이미지를 열어주세요.")
             return
 
         if is_async:
-            self._run_async(fn, kwargs)
+            self._run_async(fn, kwargs, source)
             return
 
         try:
-            self.document.apply(fn, **kwargs)
+            result = fn(source, **kwargs)
+            self.document.apply_result(result)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "처리 실패", str(exc))
             return
         self._refresh_canvas()
         self._update_actions_enabled()
 
-    def _run_async(self, fn, kwargs: dict) -> None:
-        image = self.document.current
+    def _run_async(self, fn, kwargs: dict, source_image: Image.Image | None = None) -> None:
+        image = source_image if source_image is not None else self.document.current
         label = _ASYNC_BUSY_LABELS.get(getattr(fn, "__name__", ""), "처리 중...")
         self._set_busy(True, label)
 
@@ -476,7 +497,8 @@ class MainWindow(QMainWindow):
             size=self._resolve_text_pixel_size(params.get("size_percent", 6)),
             color=params.get("color", (255, 255, 255, 255)),
             rotation=params.get("rotation", 0.0),
-            font_family=params.get("font_family", "Arial"),
+            font_path=params.get("font_path"),
+            shadow=params.get("shadow", True),
         )
 
     def _on_text_apply(self, params: dict) -> None:
