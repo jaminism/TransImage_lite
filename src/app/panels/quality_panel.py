@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.icons import icon
 from core.processors.quality import denoise, sharpen, upscale
 
 
@@ -25,19 +26,22 @@ class QualityPanel(QWidget):
         self.denoise_strength = QSlider(Qt.Horizontal)
         self.denoise_strength.setRange(1, 30)
         self.denoise_strength.setValue(10)
-        denoise_btn = QPushButton("노이즈 제거")
+        denoise_btn = QPushButton(" 노이즈 제거")
+        denoise_btn.setIcon(icon("denoise"))
         denoise_btn.clicked.connect(self._on_denoise)
 
         self.sharpen_amount = QSlider(Qt.Horizontal)
         self.sharpen_amount.setRange(100, 300)
         self.sharpen_amount.setValue(150)
-        sharpen_btn = QPushButton("선명하게")
+        sharpen_btn = QPushButton(" 선명하게")
+        sharpen_btn.setIcon(icon("sharpen"))
         sharpen_btn.clicked.connect(self._on_sharpen)
 
         self.upscale_combo = QComboBox()
         for factor in (2, 3, 4):
             self.upscale_combo.addItem(f"{factor}배", factor)
-        upscale_btn = QPushButton("업스케일")
+        upscale_btn = QPushButton(" 업스케일")
+        upscale_btn.setIcon(icon("upscale"))
         upscale_btn.clicked.connect(self._on_upscale)
 
         form = QFormLayout()

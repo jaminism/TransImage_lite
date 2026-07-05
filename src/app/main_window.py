@@ -4,8 +4,8 @@ import logging
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence, QPainter, QPixmap
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QAction, QColor, QKeySequence, QPainter, QPixmap
 from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 from PySide6.QtWidgets import (
     QDialog,
@@ -17,46 +17,74 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QSplitter,
     QStackedWidget,
+    QToolBar,
 )
 
 from app.canvas_widget import CanvasWidget
+from app.icons import icon
 from app.panels.background_panel import BackgroundPanel
 from app.panels.enhance_panel import EnhancePanel
-from app.panels.export_panel import ExportPanel
+from app.panels.erase_panel import ErasePanel
 from app.panels.quality_panel import QualityPanel
 from app.panels.resize_panel import ResizePanel
 from app.panels.text_panel import TextPanel
 from core.image_document import ImageDocument
 from core.processors.io import SUPPORTED_EXTENSIONS, open_image, save_image
 from core.processors.printer import fit_to_page
+from core.processors.text_overlay import add_text
 from workers.async_tasks import ProcessWorker
 
 logger = logging.getLogger(__name__)
 
-TOOL_NAMES = ["리사이즈", "보정", "품질 개선", "텍스트", "배경 제거", "내보내기"]
+# properties_panel(QStackedWidget) 페이지 인덱스
+PANEL_RESIZE = 0
+PANEL_ENHANCE = 1
+PANEL_QUALITY = 2
+PANEL_TEXT = 3
+PANEL_BACKGROUND = 4
+PANEL_ERASE = 5
+
+TOOL_PANEL_LABELS = ["크기/회전", "보정", "품질 개선", "텍스트", "배경 제거", "지우개"]
 
 _OPEN_FILTER = "이미지 파일 (*.png *.jpg *.jpeg *.bmp *.webp)"
+_SAVE_FILTER = "PNG (*.png);;JPEG (*.jpg);;WEBP (*.webp);;BMP (*.bmp)"
+_DEFAULT_SAVE_QUALITY = 90
+
+_ASYNC_BUSY_LABELS = {
+    "denoise": "노이즈 제거 처리 중...",
+    "sharpen": "선명도 향상 처리 중...",
+    "upscale": "업스케일 처리 중...",
+    "remove_background": "배경 제거 처리 중...",
+}
 
 
 class MainWindow(QMainWindow):
-    """3단 레이아웃(툴 사이드바 / 캔버스 / 속성 패널)의 메인 윈도우.
+    """Trans Pro 메인 윈도우: 좌측 도구 목록(편집 도구/파일) / 캔버스 / 우측 속성 패널.
 
-    각 패널은 (processor_fn, kwargs, is_async) 형태로 apply_requested를 발생시키고,
+    각 편집 패널은 (processor_fn, kwargs, is_async) 형태로 apply_requested를 발생시키고,
     이 윈도우가 ImageDocument에 실제로 반영한다. 무거운 작업은 ProcessWorker로 비동기 실행한다.
+    텍스트/지우개 도구는 캔버스와 직접 상호작용하므로 각각 전용 시그널로 연결한다.
     """
 
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("TransImage Lite")
-        self.resize(1280, 800)
+        self.setWindowTitle("Trans Pro")
+        self.resize(1360, 840)
 
         self.document = ImageDocument()
         self.canvas = CanvasWidget()
         self._worker: ProcessWorker | None = None
+        self._current_path: str | None = None
+        self._enhance_baseline: Image.Image | None = None
+        self._active_panel_index = PANEL_RESIZE
+        self._last_tool_row = 0
+        self._row_kind: dict[int, str] = {}
+        self._tool_rows: dict[int, int] = {}
+        self._action_handlers: dict[int, callable] = {}
 
         self._build_panels()
         self._build_layout()
-        self._build_menu()
+        self._build_menu_and_toolbar()
         self._build_status_bar()
         self._update_actions_enabled()
 
@@ -67,7 +95,7 @@ class MainWindow(QMainWindow):
         self.quality_panel = QualityPanel()
         self.text_panel = TextPanel()
         self.background_panel = BackgroundPanel()
-        self.export_panel = ExportPanel()
+        self.erase_panel = ErasePanel()
 
         self._panels = [
             self.resize_panel,
@@ -75,7 +103,7 @@ class MainWindow(QMainWindow):
             self.quality_panel,
             self.text_panel,
             self.background_panel,
-            self.export_panel,
+            self.erase_panel,
         ]
 
         for panel in self._panels:
@@ -84,17 +112,30 @@ class MainWindow(QMainWindow):
             if hasattr(panel, "apply_requested"):
                 panel.apply_requested.connect(self._on_apply_requested)
 
-        self.export_panel.save_requested.connect(self._on_save)
-        self.export_panel.print_requested.connect(self._on_print)
+        self.enhance_panel.reset_requested.connect(self._on_enhance_reset)
+        self.text_panel.overlay_changed.connect(self._on_text_overlay_changed)
+        self.text_panel.text_apply_requested.connect(self._on_text_apply)
+        self.erase_panel.brush_size_changed.connect(self.canvas.set_brush_radius)
+        self.canvas.erase_stroke_finished.connect(self._on_erase_stroke_finished)
 
     def _build_layout(self) -> None:
-        sidebar = QListWidget()
-        sidebar.setFixedWidth(160)
-        for name in TOOL_NAMES:
-            QListWidgetItem(name, sidebar)
-        sidebar.setCurrentRow(0)
-        sidebar.currentRowChanged.connect(self._on_tool_selected)
-        self.sidebar = sidebar
+        self.sidebar = QListWidget()
+        self.sidebar.setFixedWidth(190)
+        self.sidebar.setIconSize(QSize(20, 20))
+
+        self._add_sidebar_header("편집 도구")
+        self._add_sidebar_tool("크기 / 회전", "resize", PANEL_RESIZE)
+        self._add_sidebar_tool("보정", "enhance", PANEL_ENHANCE)
+        self._add_sidebar_tool("품질 개선", "quality", PANEL_QUALITY)
+        self._add_sidebar_tool("텍스트 추가", "text", PANEL_TEXT)
+        self._add_sidebar_tool("배경 제거", "background_remove", PANEL_BACKGROUND)
+        self._add_sidebar_tool("지우개", "erase", PANEL_ERASE)
+        self._add_sidebar_header("파일")
+        self._add_sidebar_action("저장", "save", self._on_quick_save)
+        self._add_sidebar_action("다른 이름으로 저장", "save_as", self._on_save_as)
+        self._add_sidebar_action("인쇄", "print", self._on_print)
+
+        self.sidebar.currentRowChanged.connect(self._on_sidebar_row_changed)
 
         self.properties_panel = QStackedWidget()
         for panel in self._panels:
@@ -102,42 +143,91 @@ class MainWindow(QMainWindow):
         self.properties_panel.setFixedWidth(320)
 
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(sidebar)
+        splitter.addWidget(self.sidebar)
         splitter.addWidget(self.canvas)
         splitter.addWidget(self.properties_panel)
         splitter.setStretchFactor(1, 1)
 
         self.setCentralWidget(splitter)
+        self.sidebar.setCurrentRow(1)  # 첫 번째 실제 도구("크기 / 회전")
 
-    def _build_menu(self) -> None:
+    def _add_sidebar_header(self, text: str) -> None:
+        item = QListWidgetItem(text)
+        item.setFlags(Qt.ItemFlag.NoItemFlags)
+        item.setForeground(QColor("#8b8fa3"))
+        font = item.font()
+        font.setBold(True)
+        font.setPointSize(max(8, font.pointSize() - 1))
+        item.setFont(font)
+        self.sidebar.addItem(item)
+
+    def _add_sidebar_tool(self, label: str, icon_name: str, panel_index: int) -> None:
+        item = QListWidgetItem(icon(icon_name), label)
+        self.sidebar.addItem(item)
+        row = self.sidebar.count() - 1
+        self._row_kind[row] = "tool"
+        self._tool_rows[row] = panel_index
+
+    def _add_sidebar_action(self, label: str, icon_name: str, handler) -> None:
+        item = QListWidgetItem(icon(icon_name), label)
+        self.sidebar.addItem(item)
+        row = self.sidebar.count() - 1
+        self._row_kind[row] = "action"
+        self._action_handlers[row] = handler
+
+    def _build_menu_and_toolbar(self) -> None:
         file_menu = self.menuBar().addMenu("파일")
 
-        self.open_action = QAction("열기...", self)
+        self.open_action = QAction(icon("open"), "열기...", self)
         self.open_action.setShortcut(QKeySequence.Open)
         self.open_action.triggered.connect(self._open_image)
         file_menu.addAction(self.open_action)
 
-        self.save_action = QAction("다른 이름으로 저장...", self)
-        self.save_action.setShortcut(QKeySequence.SaveAs)
-        self.save_action.triggered.connect(lambda: self._on_save(90))
+        self.save_action = QAction(icon("save"), "저장", self)
+        self.save_action.setShortcut(QKeySequence.Save)
+        self.save_action.triggered.connect(self._on_quick_save)
         file_menu.addAction(self.save_action)
 
-        self.print_action = QAction("프린트...", self)
+        self.save_as_action = QAction(icon("save_as"), "다른 이름으로 저장...", self)
+        self.save_as_action.setShortcut(QKeySequence.SaveAs)
+        self.save_as_action.triggered.connect(self._on_save_as)
+        file_menu.addAction(self.save_as_action)
+
+        self.print_action = QAction(icon("print"), "인쇄...", self)
         self.print_action.setShortcut(QKeySequence.Print)
         self.print_action.triggered.connect(self._on_print)
         file_menu.addAction(self.print_action)
 
         edit_menu = self.menuBar().addMenu("편집")
 
-        self.undo_action = QAction("실행 취소", self)
+        self.undo_action = QAction(icon("undo"), "실행 취소", self)
         self.undo_action.setShortcut(QKeySequence.Undo)
         self.undo_action.triggered.connect(self._on_undo)
         edit_menu.addAction(self.undo_action)
 
-        self.redo_action = QAction("다시 실행", self)
+        self.redo_action = QAction(icon("redo"), "다시 실행", self)
         self.redo_action.setShortcut(QKeySequence.Redo)
         self.redo_action.triggered.connect(self._on_redo)
         edit_menu.addAction(self.redo_action)
+
+        self.reset_all_action = QAction(icon("refresh"), "전체 초기화", self)
+        self.reset_all_action.triggered.connect(self._on_reset_all)
+        edit_menu.addAction(self.reset_all_action)
+
+        toolbar = QToolBar("주요 작업")
+        toolbar.setMovable(False)
+        toolbar.setIconSize(QSize(20, 20))
+        for action in (
+            self.open_action,
+            self.save_action,
+            self.save_as_action,
+            self.print_action,
+            self.undo_action,
+            self.redo_action,
+            self.reset_all_action,
+        ):
+            toolbar.addAction(action)
+        self.addToolBar(toolbar)
 
     def _build_status_bar(self) -> None:
         self.status_progress = QProgressBar()
@@ -147,11 +237,37 @@ class MainWindow(QMainWindow):
         self.statusBar().addPermanentWidget(self.status_progress)
         self.statusBar().showMessage("이미지를 열어주세요 (Ctrl+O)")
 
-    # ------------------------------------------------------------------ 도구 선택
-    def _on_tool_selected(self, index: int) -> None:
-        if index >= 0:
-            self.properties_panel.setCurrentIndex(index)
+    # ------------------------------------------------------------------ 사이드바 / 도구 전환
+    def _on_sidebar_row_changed(self, row: int) -> None:
+        if row < 0:
+            return
+        kind = self._row_kind.get(row)
+        if kind == "tool":
+            self._last_tool_row = row
+            self._activate_tool_panel(self._tool_rows[row])
+        elif kind == "action":
+            handler = self._action_handlers[row]
+            handler()
+            self.sidebar.blockSignals(True)
+            self.sidebar.setCurrentRow(self._last_tool_row)
+            self.sidebar.blockSignals(False)
+
+    def _activate_tool_panel(self, index: int) -> None:
+        if self._active_panel_index == PANEL_ERASE:
+            self.canvas.end_erase()
+        if self._active_panel_index == PANEL_TEXT:
+            self.canvas.clear_text_overlay()
+
+        self._active_panel_index = index
+        self.properties_panel.setCurrentIndex(index)
         self._refresh_canvas()
+
+        if index == PANEL_ENHANCE:
+            self._enhance_baseline = self.document.current
+        elif index == PANEL_TEXT:
+            self.text_panel.emit_current_overlay()
+        elif index == PANEL_ERASE and self.document.current is not None:
+            self.canvas.begin_erase(self.document.current, self.erase_panel.brush_radius)
 
     # ------------------------------------------------------------------ 파일 열기
     def _open_image(self) -> None:
@@ -164,7 +280,8 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "열기 실패", f"이미지를 열 수 없습니다:\n{exc}")
             return
         self.document.load(image)
-        self._refresh_canvas()
+        self._current_path = path
+        self._activate_tool_panel(self._active_panel_index)
         self._update_actions_enabled()
         self.statusBar().showMessage(f"열림: {path} ({image.width}x{image.height})")
 
@@ -198,7 +315,8 @@ class MainWindow(QMainWindow):
 
     def _run_async(self, fn, kwargs: dict) -> None:
         image = self.document.current
-        self._set_busy(True)
+        label = _ASYNC_BUSY_LABELS.get(getattr(fn, "__name__", ""), "처리 중...")
+        self._set_busy(True, label)
 
         worker = ProcessWorker(fn, image=image, **kwargs)
         self._worker = worker  # GC 방지를 위해 참조 유지
@@ -221,13 +339,71 @@ class MainWindow(QMainWindow):
         worker.failed.connect(on_fail)
         worker.start()
 
-    def _set_busy(self, busy: bool) -> None:
+    def _set_busy(self, busy: bool, message: str = "처리 중...") -> None:
         self.sidebar.setEnabled(not busy)
         self.properties_panel.setEnabled(not busy)
         self.status_progress.setVisible(busy)
-        self.statusBar().showMessage("처리 중..." if busy else "완료")
+        self.statusBar().showMessage(message if busy else "완료")
+        self.canvas.set_busy(busy, message)
 
-    # ------------------------------------------------------------------ Undo/Redo
+    # ------------------------------------------------------------------ 보정 초기화 (baseline 복귀)
+    def _on_enhance_reset(self) -> None:
+        if self._enhance_baseline is None or self.document.current is None:
+            return
+        if self.document.current is self._enhance_baseline:
+            return
+        self.document.apply_result(self._enhance_baseline)
+        self._refresh_canvas()
+        self._update_actions_enabled()
+
+    # ------------------------------------------------------------------ 텍스트 드래그 오버레이
+    def _on_text_overlay_changed(self, params: dict) -> None:
+        if self.document.current is None:
+            return
+        self.canvas.show_text_overlay(
+            text=params.get("text", ""),
+            size=params.get("size", 48),
+            color=params.get("color", (255, 255, 255, 255)),
+            rotation=params.get("rotation", 0.0),
+        )
+
+    def _on_text_apply(self, params: dict) -> None:
+        text = (params.get("text") or "").strip()
+        if not text:
+            QMessageBox.information(self, "텍스트 추가", "텍스트를 입력해주세요.")
+            return
+        if self.document.current is None:
+            QMessageBox.information(self, "알림", "먼저 이미지를 열어주세요.")
+            return
+        position = self.canvas.get_text_overlay_position()
+        kwargs = {
+            "text": text,
+            "position": position,
+            "size": params.get("size", 48),
+            "color": params.get("color", (255, 255, 255, 255)),
+            "rotation": params.get("rotation", 0.0),
+            "shadow": params.get("shadow", True),
+        }
+        try:
+            self.document.apply(add_text, **kwargs)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "처리 실패", str(exc))
+            return
+        self.canvas.clear_text_overlay()
+        self._refresh_canvas()
+        self._update_actions_enabled()
+
+    # ------------------------------------------------------------------ 지우개
+    def _on_erase_stroke_finished(self, image: Image.Image) -> None:
+        try:
+            self.document.apply_result(image)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "처리 실패", str(exc))
+            return
+        self._update_actions_enabled()
+        # 캔버스는 이미 지워진 결과를 표시 중이므로 _refresh_canvas()를 다시 호출하지 않는다.
+
+    # ------------------------------------------------------------------ Undo/Redo/전체 초기화
     def _on_undo(self) -> None:
         self.document.undo()
         self._refresh_canvas()
@@ -238,32 +414,65 @@ class MainWindow(QMainWindow):
         self._refresh_canvas()
         self._update_actions_enabled()
 
+    def _on_reset_all(self) -> None:
+        if self.document.original is None or self.document.current is None:
+            return
+        if self.document.current is self.document.original:
+            return
+        reply = QMessageBox.question(
+            self,
+            "전체 초기화",
+            "모든 편집 내용을 취소하고 원본 이미지로 되돌릴까요?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self.document.apply_result(self.document.original)
+        self._refresh_canvas()
+        self._update_actions_enabled()
+
     def _update_actions_enabled(self) -> None:
         has_image = self.document.current is not None
         self.save_action.setEnabled(has_image)
+        self.save_as_action.setEnabled(has_image)
         self.print_action.setEnabled(has_image)
         self.undo_action.setEnabled(self.document.can_undo())
         self.redo_action.setEnabled(self.document.can_redo())
+        self.reset_all_action.setEnabled(has_image and self.document.current is not self.document.original)
 
     # ------------------------------------------------------------------ 저장 / 프린트
-    def _on_save(self, quality: int) -> None:
+    def _on_quick_save(self) -> None:
         if self.document.current is None:
             QMessageBox.information(self, "저장", "저장할 이미지가 없습니다.")
             return
-        filters = "PNG (*.png);;JPEG (*.jpg);;WEBP (*.webp);;BMP (*.bmp)"
-        path, _ = QFileDialog.getSaveFileName(self, "다른 이름으로 저장", "", filters)
-        if not path:
+        if not self._current_path:
+            self._on_save_as()
             return
         try:
-            save_image(self.document.current, path, quality=quality)
+            save_image(self.document.current, self._current_path, quality=_DEFAULT_SAVE_QUALITY)
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "저장 실패", f"이미지를 저장할 수 없습니다:\n{exc}")
             return
+        self.statusBar().showMessage(f"저장됨: {self._current_path}")
+
+    def _on_save_as(self) -> None:
+        if self.document.current is None:
+            QMessageBox.information(self, "저장", "저장할 이미지가 없습니다.")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "다른 이름으로 저장", self._current_path or "", _SAVE_FILTER)
+        if not path:
+            return
+        try:
+            save_image(self.document.current, path, quality=_DEFAULT_SAVE_QUALITY)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "저장 실패", f"이미지를 저장할 수 없습니다:\n{exc}")
+            return
+        self._current_path = path
         self.statusBar().showMessage(f"저장됨: {path}")
 
     def _on_print(self) -> None:
         if self.document.current is None:
-            QMessageBox.information(self, "프린트", "출력할 이미지가 없습니다.")
+            QMessageBox.information(self, "인쇄", "출력할 이미지가 없습니다.")
             return
 
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
@@ -291,4 +500,4 @@ class MainWindow(QMainWindow):
         self.canvas.set_image(self.document.current)
 
 
-__all__ = ["MainWindow", "TOOL_NAMES", "SUPPORTED_EXTENSIONS"]
+__all__ = ["MainWindow", "TOOL_PANEL_LABELS", "SUPPORTED_EXTENSIONS"]

@@ -1,5 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for TransImage Lite (Windows onefile build).
+"""PyInstaller spec for Trans Pro (Windows onefile build).
 
 Usage: pyinstaller build.spec
 """
@@ -37,7 +37,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="TransImageLite",
+    name="TransPro",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

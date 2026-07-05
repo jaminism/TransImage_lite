@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.icons import icon
 from core.processors.background_removal import remove_background, replace_background
 
 
@@ -23,15 +24,18 @@ class BackgroundPanel(QWidget):
 
         self._fill_color = QColor(255, 255, 255)
 
-        remove_btn = QPushButton("배경 제거 (투명화)")
+        remove_btn = QPushButton(" 배경 제거 (투명화)")
+        remove_btn.setIcon(icon("background_remove"))
         remove_btn.setObjectName("primaryButton")
         remove_btn.clicked.connect(self._on_remove)
 
         self.color_btn = QPushButton()
+        self.color_btn.setIcon(icon("fill"))
         self._update_color_button()
         self.color_btn.clicked.connect(self._pick_color)
 
-        fill_btn = QPushButton("단색 배경으로 채우기")
+        fill_btn = QPushButton(" 단색 배경으로 채우기")
+        fill_btn.setIcon(icon("fill"))
         fill_btn.clicked.connect(self._on_fill)
 
         layout = QVBoxLayout(self)

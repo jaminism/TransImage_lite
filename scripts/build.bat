@@ -1,5 +1,5 @@
 @echo off
-REM Build TransImageLite.exe with PyInstaller. Run from the project root.
+REM Build TransPro.exe with PyInstaller. Run from the project root.
 setlocal
 
 if not exist .venv (
@@ -16,5 +16,5 @@ echo [build] running PyInstaller...
 .venv\Scripts\python.exe -m PyInstaller build.spec --noconfirm
 if errorlevel 1 exit /b 1
 
-echo [build] done: dist\TransImageLite.exe
+echo [build] done: dist\TransPro.exe
 endlocal
