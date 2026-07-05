@@ -43,6 +43,7 @@
 | 도구별 baseline 적용 | 보정/텍스트에 이어 품질개선에도 "도구 진입 시점 이미지" 기준 적용 | 슬라이더 값을 바꿔가며 결과를 비교하는 도구는 매번 `document.current`(직전 결과)가 아니라 baseline에서부터 다시 계산해야, 값을 바꿔도 항상 눈에 보이는 차이가 남는다 |
 | QSS 배경색 기본 정책 | `QMainWindow`에만 배경색 지정, 일반 `QWidget`은 기본 투명 | 예전 방식(`QMainWindow, QWidget { background-color: ... }`으로 전체에 배경 강제)은 카드/버튼 위에 얹힌 순수 레이아웃용 QWidget에도 그대로 적용되어, 주변과 다른 색의 사각형이 떠 보이는 버그가 여러 차례(QLabel, 브랜드 위젯 등) 반복 발생했음. 아키텍처 자체를 "기본 투명 + 필요한 곳만 명시적 배경"으로 바꿔 이 버그 클래스를 근본적으로 제거 |
 | 폰트 글리프 지원 확인 | `fontTools`로 폰트 파일의 cmap 테이블 직접 조회 | 폰트가 특정 문자를 지원하는지는 `ImageFont.truetype()`이 파일을 여는 데 성공하는지와 무관함(파일은 열려도 해당 글자의 글리프가 없을 수 있음). 한글 포함 텍스트에서 사용자가 고른 폰트를 존중하면서도 지원하지 않는 폰트에는 자동으로 대체하려면 실제 글리프 커버리지 확인이 필요해 가벼운 순수 파이썬 의존성으로 추가 |
+| PyInstaller 빌드 시 바이너리 의존성 필터링 | `build.spec`에서 `_internal` 최상위에 놓인 msvcp140/vcruntime140/icuuc/icudt 계열 DLL을 명시적으로 제외 | PyInstaller는 빌드 시점 시스템 PATH에서 이름만으로 바이너리 의존성을 찾는데, 이 개발 PC의 Anaconda3 `Library\bin`이 PATH에 있어 PySide6/shiboken6 전용 사본이나 Qt6Core.dll이 참조하는 icuuc.dll 대신 버전이 다른 Anaconda 번들 DLL을 집어와 exe 실행 시 `ImportError: DLL load failed while importing QtGui`(지정된 프로시저를 찾을 수 없음)로 이어짐. 프로젝트 초기의 "Anaconda Python DLL 충돌"과 근본 원인은 같지만, 이번엔 인터프리터가 아니라 PyInstaller의 바이너리 의존성 스캔이 시스템 PATH를 참조해서 발생 |
 
 ## 구현 현황
 
@@ -94,6 +95,7 @@ scripts\build.bat
 - 산출물: `dist\TransPro.exe` (약 213~225MB, onnxruntime/opencv/Qt 포함이라 용량이 큼)
 - u2net 모델은 exe에 포함하지 않음 — 최초 실행 시 다운로드
 - `fonttools`는 순수 파이썬 패키지라 별도 hiddenimport 설정 없이 PyInstaller가 정적 분석만으로 정상 포함함 (2026-07-06 확대/축소 기능 빌드 시 확인)
+- **이 개발 PC에 Anaconda3가 설치되어 있고 그 `Library\bin`이 시스템 PATH에 있으면, PyInstaller가 빌드 시점에 Qt와 이름이 겹치는 Anaconda 번들 DLL(msvcp140/vcruntime140 계열, icuuc/icudt)을 잘못 집어와 exe 실행 시 `ImportError: DLL load failed while importing QtGui`가 날 수 있음.** `build.spec`이 이런 최상위 stray DLL을 자동으로 걸러내도록 이미 처리되어 있지만, 다른 개발 PC로 옮기거나 이 필터 로직을 건드릴 때는 실제로 `dist\TransPro.exe`를 직접 더블클릭(또는 콘솔에서 실행)해 정상 기동하는지 반드시 확인할 것 — 프로세스가 몇 초간 살아있는지만 보는 스모크 테스트로는 이 오류를 못 걸러낸다(창 모드 크래시는 메시지박스를 띄우며 프로세스 자체는 살아있음)
 
 ## 다음 단계 / TODO
 
@@ -186,3 +188,4 @@ scripts\build.bat
 - **상태바 우측에 확대/축소(%) 컨트롤 추가** (이슈 [#21](https://github.com/jaminism/TransImage_lite/issues/21)): 크롬의 %-지정 줌 UX를 참고해 상태바 우측에 축소(-)/슬라이더(10~400%)/확대(+)/현재 %(클릭 시 프리셋 25~400% + "화면에 맞추기" 메뉴)/화면에 맞추기 버튼으로 구성된 `ZoomControl` 위젯 추가(`src/app/zoom_control.py`). `CanvasWidget`에 "화면에 맞추기"(fit)/"수동"(manual) 두 줌 모드를 도입해 `zoom_changed` 시그널 + `set_zoom_percent()`/`zoom_to_fit()` API로 컨트롤과 양방향 동기화. Ctrl+휠 줌이나 컨트롤로 수동 배율을 정하면 이후 창 크기를 조절해도 그 배율을 유지하고(예전엔 모든 창 리사이즈가 무조건 다시 맞춤이었음), 새 사진을 열면 다시 화면에 맞추기로 리셋됨. 신규 아이콘 3개 추가(`zoom_in`/`zoom_out`/`zoom_fit`)
   - 신규 테스트 14개 추가(줌 API 동작/클램핑/시그널, 리사이즈 시 수동↔fit 모드별 동작 차이, 컨트롤 위젯 단위 테스트, 컨트롤-캔버스 통합 동기화, 새 사진 열 때 리셋), 전체 121개 테스트 통과
   - PR 병합 직후 `scripts\build.bat`로 exe 재빌드(`dist\TransPro.exe`, 약 225MB) 및 헤드리스 실행 스모크 테스트(4초간 정상 구동 확인) 완료
+- **빌드된 exe 실행 시 QtGui DLL 로드 실패 수정** (이슈 [#25](https://github.com/jaminism/TransImage_lite/issues/25)): 위 회차에서 빌드한 `dist\TransPro.exe`를 사용자가 직접 실행하자 `ImportError: DLL load failed while importing QtGui: 지정된 프로시저를 찾을 수 없습니다` 발생 — 앞선 스모크 테스트(프로세스가 몇 초간 살아있는지만 확인)로는 이 오류를 못 걸러냈음(PyInstaller 창 모드는 크래시 시 메시지박스를 띄우며 프로세스 자체는 살아있어 "정상 구동"처럼 보였음). **실제 원인**: onedir 디버그 빌드(console=True)로 재현한 뒤 `pefile`로 `Qt6Core.dll`의 실제 임포트 테이블을 직접 조사해 확인 — PyInstaller가 빌드 시점에 바이너리 의존성을 시스템 PATH에서 이름만으로 찾다가, 이 개발 PC의 Anaconda3 `Library\bin`이 PATH에 있어서 PySide6/shiboken6 전용 사본(msvcp140/vcruntime140 계열)이나 Qt6Core.dll이 참조하는 `icuuc.dll` 대신 Anaconda가 번들한 버전이 다른 동명 DLL을 집어와 `_internal` 최상위(공용 검색 경로)에 놓아버렸음. 한 프로세스에서 같은 이름의 DLL은 처음 로드된 것이 계속 재사용되므로, 이 최상위 사본이 먼저 로드되며 QtGui가 기대하는 내보내기가 없어 오류로 이어짐 — 프로젝트 초기의 "Anaconda Python DLL 충돌"과 근본 원인은 같되, 이번엔 인터프리터가 아니라 PyInstaller의 바이너리 의존성 스캔이 시스템 PATH를 참조해서 발생. `build.spec`에서 최상위에 중복 배치된 해당 DLL들을 제거하도록 수정, onedir 디버그 빌드로 수정 확인 후 실제 onefile exe도 재빌드해 추출 임시 폴더(`_MEI*`)에 더 이상 최상위 stray DLL이 없음을 확인
