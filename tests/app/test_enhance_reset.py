@@ -31,3 +31,25 @@ def test_reset_is_noop_when_nothing_applied(qtbot, sample_rgb_image):
     window.enhance_panel.reset_requested.emit()
 
     assert window.document.current is baseline
+
+
+def test_reset_refreshes_canvas_when_only_live_preview_was_shown(qtbot, sample_rgb_image):
+    """슬라이더로 미리보기만 본 상태(적용 안 누름)에서 초기화를 누르면, document.current는
+    이미 baseline과 같아도 캔버스에는 커밋되지 않은 미리보기가 남아있으므로 반드시
+    다시 그려야 한다."""
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.document.load(sample_rgb_image)
+
+    window._activate_tool_panel(PANEL_ENHANCE)
+    baseline = window.document.current
+
+    # 슬라이더 드래그로 인한 라이브 미리보기 — document.current는 그대로, 캔버스만 바뀜
+    window._on_preview_requested(apply_adjustments, {"brightness": 1.8, "contrast": 1.5, "saturation": 0.5})
+    previewed = window.canvas._pixmap_item.pixmap().toImage()
+
+    window.enhance_panel.reset_requested.emit()
+
+    assert window.document.current is baseline
+    reverted = window.canvas._pixmap_item.pixmap().toImage()
+    assert reverted != previewed

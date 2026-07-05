@@ -127,9 +127,30 @@ QLineEdit:focus, QSpinBox:focus, QComboBox:focus, QFontComboBox:focus {
     border: 1px solid #7c5cff;
 }
 
+/* 콤보박스 오른쪽 끝을 눌러야 목록이 열리는데, 버튼 표시가 전혀 없어 클릭 가능한
+   위치인지 알기 어려웠다. 드롭다운 영역을 시각적으로 분리하고 화살표 글리프를 추가한다. */
 QComboBox::drop-down, QFontComboBox::drop-down {
+    subcontrol-origin: border;
+    subcontrol-position: top right;
     border: none;
+    border-left: 1px solid #3a3c42;
     width: 20px;
+    background-color: #2f3136;
+    border-top-right-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+QComboBox::drop-down:hover, QFontComboBox::drop-down:hover {
+    background-color: #3a3c42;
+}
+
+QComboBox::down-arrow, QFontComboBox::down-arrow {
+    image: none;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #e4e6eb;
+    width: 0;
+    height: 0;
 }
 
 /* QSpinBox 기본 padding이 up/down 버튼 영역까지 침범해 클릭이 잘 안 되는 문제를

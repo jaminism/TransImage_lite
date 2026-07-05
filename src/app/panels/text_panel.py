@@ -68,7 +68,7 @@ class TextPanel(QWidget):
         self.rotation_spin.valueChanged.connect(self._emit_overlay_changed)
 
         self.shadow_check = QCheckBox("그림자 효과")
-        self.shadow_check.setChecked(True)
+        self.shadow_check.setChecked(False)
         self.shadow_check.toggled.connect(self._emit_overlay_changed)
 
         self.color_btn = QPushButton()
@@ -180,6 +180,6 @@ class TextPanel(QWidget):
 
         self._color = QColor(255, 255, 255)
         self._update_color_button()
-        self.shadow_check.setChecked(True)
+        self.shadow_check.setChecked(False)
 
         self.reset_requested.emit()

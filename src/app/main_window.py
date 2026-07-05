@@ -472,9 +472,8 @@ class MainWindow(QMainWindow):
     def _on_enhance_reset(self) -> None:
         if self._enhance_baseline is None or self.document.current is None:
             return
-        if self.document.current is self._enhance_baseline:
-            return
-        self.document.apply_result(self._enhance_baseline)
+        if self.document.current is not self._enhance_baseline:
+            self.document.apply_result(self._enhance_baseline)
         self._refresh_canvas()
         self._update_actions_enabled()
 
