@@ -35,7 +35,7 @@
 | 다운로드(저장) | ✅ | PNG/JPEG/WEBP/BMP, 품질 조절 |
 | Undo/Redo | ✅ | Ctrl+Z / Ctrl+Y |
 | 모던 UI | ✅ | 다크 테마, 3단 레이아웃(사이드바/캔버스/속성패널) |
-| PyInstaller 패키징 | ⬜ | 예정 |
+| PyInstaller 패키징 | ✅ | `build.spec` + `scripts/build.bat`, onefile 방식, 실행 스모크 테스트 통과 |
 
 발견 및 수정한 버그:
 - `ImageEnhance`(Pillow)가 RGBA 이미지의 알파 채널까지 다른 채널과 함께 블렌딩해서, 배경 제거 후 밝기/대비/채도를 조정하면 투명 영역이 부분적으로 불투명해지는 문제 발견 → `core/processors/enhance.py`에서 알파 채널을 분리했다가 재합성하도록 수정, 회귀 테스트 추가
@@ -54,10 +54,21 @@
 - 프린트 기능은 실제 프린터가 없어도 Windows의 "Microsoft Print to PDF"를 프린터로 선택하면 테스트할 수 있습니다.
 - 테스트 실행: `.venv\Scripts\python.exe -m pytest` (UI 테스트 포함, headless 환경에서는 `$env:QT_QPA_PLATFORM = "offscreen"` 설정 필요)
 
+## 애플리케이션 실행파일(.exe) 빌드
+
+```powershell
+.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+scripts\build.bat
+```
+
+- `build.spec` — PyInstaller onefile 스펙. `rembg`/`onnxruntime`은 `collect_all()`로 네이티브 바이너리까지 수집, 아이콘은 `src/resources/icons/app.ico`
+- 산출물: `dist\TransImageLite.exe` (약 213MB, onnxruntime/opencv/Qt 포함이라 용량이 큼)
+- u2net 모델은 exe에 포함하지 않음 — 최초 실행 시 다운로드
+
 ## 다음 단계 / TODO
 
-- [ ] PyInstaller로 Windows 실행파일(.exe) 패키징
 - [ ] (필요 시) 실제 프린터 환경에서 프린트 기능 수동 검증
+- [ ] (필요 시) 클린 Windows 환경(Python 미설치)에서 배포용 exe 실행 검증
 
 ## 변경 이력
 
@@ -69,3 +80,4 @@
 - 단위/통합 테스트 42개 작성 및 통과, 실제 이미지로 전체 파이프라인 end-to-end 검증(rembg 실제 모델 포함)
 - 버그 수정: `ImageEnhance` 알파 채널 보존 문제
 - 본 문서(`PROJECT_LOG.md`) 생성 — 이후 요구사항/변경 사항을 이 섹션에 계속 기록하기로 함
+- PyInstaller 패키징 완료: `build.spec`, `scripts/build.bat`, 앱 아이콘 생성, `dist\TransImageLite.exe` 빌드 후 헤드리스 실행으로 정상 기동 확인 (실제 프린터/클린 환경 검증은 미완료)

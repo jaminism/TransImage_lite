@@ -40,6 +40,15 @@ set QT_QPA_PLATFORM=offscreen   # 헤드리스 환경에서 UI 테스트 실행 
 pytest
 ```
 
+## Windows 실행파일(.exe) 빌드
+
+```
+.venv\Scripts\python.exe -m pip install -r requirements-build.txt
+scripts\build.bat
+```
+
+`dist\TransImageLite.exe` 하나로 배포되는 단일 실행파일이 생성됩니다 (PyInstaller `--onefile` 방식, `build.spec` 참고). 배경 제거용 u2net 모델은 exe에 포함되지 않고 최초 실행 시 다운로드됩니다.
+
 ## 프로젝트 구조
 
 ```
