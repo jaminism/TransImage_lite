@@ -1,6 +1,7 @@
 import pytest
 
-from core.processors.text_overlay import _contains_hangul, add_text, render_text_preview
+from core.processors.fonts import resolve_windows_font_path
+from core.processors.text_overlay import _contains_hangul, _load_font, add_text, render_text_preview
 
 
 def test_add_text_returns_rgba(sample_rgb_image):
@@ -76,3 +77,32 @@ def test_italic_shears_layer_wider_than_regular():
 def test_add_text_supports_bold_and_italic_together(sample_rgb_image):
     result = add_text(sample_rgb_image, "Hi", position=(0, 0), size=20, bold=True, italic=True)
     assert result.mode == "RGBA"
+
+
+def test_korean_text_respects_explicitly_selected_font_when_it_supports_hangul():
+    """이전에는 한글이 섞이면 사용자가 고른 폰트와 무관하게 항상 맑은 고딕이 먼저
+    시도되어, 한글을 지원하는 다른 폰트(예: 굴림)를 선택해도 무시됐다."""
+    gulim_path = resolve_windows_font_path("Gulim")
+    if not gulim_path:
+        pytest.skip("이 환경에 굴림 폰트가 설치되어 있지 않음")
+
+    font = _load_font(gulim_path, 40, "안녕하세요")
+    assert font.path == gulim_path
+
+
+def test_korean_text_falls_back_when_selected_font_lacks_hangul_glyphs():
+    arial_path = resolve_windows_font_path("Arial")
+    if not arial_path:
+        pytest.skip("이 환경에 Arial 폰트가 설치되어 있지 않음")
+
+    font = _load_font(arial_path, 40, "안녕하세요")
+    assert font.path != arial_path
+
+
+def test_latin_text_still_respects_selected_font_without_hangul_check():
+    arial_path = resolve_windows_font_path("Arial")
+    if not arial_path:
+        pytest.skip("이 환경에 Arial 폰트가 설치되어 있지 않음")
+
+    font = _load_font(arial_path, 40, "Hello")
+    assert font.path == arial_path

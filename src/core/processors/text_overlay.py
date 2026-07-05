@@ -27,12 +27,35 @@ def _contains_hangul(text: str) -> bool:
     )
 
 
+def _font_supports_text(font_path: str, text: str) -> bool:
+    """font_path의 폰트 파일이 text의 모든 글자(공백 제외)에 대한 글리프를 갖고 있는지 확인한다.
+
+    단순히 ImageFont.truetype()이 성공(파일이 존재)하는 것만으로는 그 폰트가 실제로
+    해당 문자를 지원하는지 알 수 없다 — 예를 들어 Arial은 파일 자체는 정상적으로
+    열리지만 한글 글리프가 없어 렌더링하면 네모(tofu)만 나온다. cmap 테이블을 직접
+    조회해 글자 하나하나가 실제로 존재하는지 확인한다.
+    """
+    try:
+        from fontTools.ttLib import TTFont
+
+        with TTFont(font_path, lazy=True, fontNumber=0) as tt:
+            cmap = tt.getBestCmap() or {}
+            return all(ord(ch) in cmap for ch in text if not ch.isspace())
+    except Exception:  # noqa: BLE001 - 폰트 파일이 손상/특수 포맷이어도 렌더링 자체는 계속되어야 함
+        return False
+
+
 def _load_font(font_path: str | None, size: int, text: str = "") -> ImageFont.FreeTypeFont:
     candidates: list[str] = []
     if _contains_hangul(text):
         # PIL은 Qt와 달리 폰트가 지원하지 않는 글자를 다른 폰트로 자동 대체하지 않는다.
-        # 사용자가 고른 폰트(예: Arial)가 한글을 지원하지 않으면 텍스트 전체가 네모(tofu)로만
-        # 나오므로, 한글이 섞여 있으면 한글 지원이 확실한 폰트를 먼저 시도한다.
+        # 사용자가 고른 폰트가 실제로 한글 글리프를 갖고 있으면 그 폰트를 그대로 쓰고,
+        # 그렇지 않을 때만(예: Arial처럼 한글 미지원 폰트) 한글 지원이 확실한 폰트로
+        # 대체한다 — 예전에는 한글이 섞이면 사용자 선택과 무관하게 무조건 맑은 고딕을
+        # 먼저 시도해서, 어떤 폰트를 선택해도 한글 텍스트에는 폰트 변경이 반영되지
+        # 않는 문제가 있었다.
+        if font_path and _font_supports_text(font_path, text):
+            candidates.append(font_path)
         candidates.append(_KOREAN_FONT)
     if font_path:
         candidates.append(font_path)

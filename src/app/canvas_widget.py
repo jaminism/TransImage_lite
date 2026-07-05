@@ -187,6 +187,12 @@ class CanvasWidget(QGraphicsView):
     def resizeEvent(self, event) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._busy_overlay.setGeometry(self.rect())
+        # 도구를 전환할 때(set_image -> fitInView)는 이미지가 새 캔버스 크기에 맞춰
+        # 다시 스케일되는데, 창 크기만 조절했을 때는 그러지 않아 사진이 그대로
+        # 남아있는 것처럼 보이는 문제가 있었다. 창 리사이즈 시에도 동일하게 다시
+        # 맞춘다.
+        if self._pixmap_item is not None:
+            self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
 
     # ------------------------------------------------------------------ 진행 중 표시
     def set_busy(self, busy: bool, message: str = "처리 중...") -> None:
