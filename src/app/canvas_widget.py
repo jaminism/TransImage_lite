@@ -5,8 +5,10 @@ from typing import Optional
 from PIL import Image
 from PIL.ImageQt import ImageQt
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QPainter, QPixmap, QWheelEvent
+from PySide6.QtGui import QColor, QPainter, QPixmap, QWheelEvent
 from PySide6.QtWidgets import QGraphicsPixmapItem, QGraphicsScene, QGraphicsView
+
+_CANVAS_BACKGROUND = QColor("#151617")
 
 
 class CanvasWidget(QGraphicsView):
@@ -20,9 +22,10 @@ class CanvasWidget(QGraphicsView):
         super().__init__()
         self._scene = QGraphicsScene(self)
         self.setScene(self._scene)
+        self.setFrameShape(QGraphicsView.NoFrame)
         self.setRenderHint(QPainter.SmoothPixmapTransform)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
-        self.setBackgroundBrush(Qt.darkGray)
+        self.setBackgroundBrush(_CANVAS_BACKGROUND)
 
         self._pixmap_item: Optional[QGraphicsPixmapItem] = None
 

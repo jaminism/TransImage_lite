@@ -29,9 +29,16 @@ class ImageDocument:
     def apply(self, processor_fn: Callable[..., Image.Image], **params) -> None:
         if self.current is None:
             raise ValueError("적용할 이미지가 없습니다.")
+        new_image = processor_fn(self.current, **params)
+        self.apply_result(new_image)
+
+    def apply_result(self, new_image: Image.Image) -> None:
+        """비동기 워커 등에서 이미 계산된 결과를 문서에 반영한다 (undo 스택 갱신 포함)."""
+        if self.current is None:
+            raise ValueError("적용할 이미지가 없습니다.")
         self._undo_stack.append(self.current)
         self._redo_stack.clear()
-        self.current = processor_fn(self.current, **params)
+        self.current = new_image
 
     def can_undo(self) -> bool:
         return bool(self._undo_stack)

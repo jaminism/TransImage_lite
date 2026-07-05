@@ -1,0 +1,167 @@
+/* TransImage Lite — 모던 다크 테마 (Fluent 스타일 참고) */
+
+* {
+    font-family: "Segoe UI", "Malgun Gothic", sans-serif;
+    font-size: 13px;
+    color: #e4e6eb;
+}
+
+QMainWindow, QWidget {
+    background-color: #1e1f22;
+}
+
+QSplitter::handle {
+    background-color: #2b2d31;
+    width: 1px;
+}
+
+/* ---------- 사이드바 ---------- */
+QListWidget {
+    background-color: #232427;
+    border: none;
+    border-right: 1px solid #313338;
+    padding: 6px;
+    outline: none;
+}
+
+QListWidget::item {
+    padding: 10px 8px;
+    border-radius: 8px;
+    margin: 2px 0;
+}
+
+QListWidget::item:hover {
+    background-color: #2b2d31;
+}
+
+QListWidget::item:selected {
+    background-color: #3a6ff7;
+    color: #ffffff;
+}
+
+/* ---------- 속성 패널 (카드형) ---------- */
+QStackedWidget {
+    background-color: #26272b;
+    border-left: 1px solid #313338;
+}
+
+QStackedWidget > QWidget {
+    background-color: #26272b;
+    padding: 12px;
+}
+
+QLabel {
+    color: #e4e6eb;
+}
+
+/* ---------- 버튼 ---------- */
+QPushButton {
+    background-color: #2f3136;
+    border: 1px solid #3a3c42;
+    border-radius: 6px;
+    padding: 8px 14px;
+}
+
+QPushButton:hover {
+    background-color: #383a40;
+}
+
+QPushButton:pressed {
+    background-color: #26272b;
+}
+
+QPushButton:disabled {
+    color: #6f7278;
+    background-color: #2a2b2e;
+}
+
+QPushButton#primaryButton {
+    background-color: #3a6ff7;
+    border: none;
+    color: #ffffff;
+    font-weight: 600;
+}
+
+QPushButton#primaryButton:hover {
+    background-color: #558cff;
+}
+
+QPushButton#primaryButton:pressed {
+    background-color: #2f5bd1;
+}
+
+/* ---------- 입력 컨트롤 ---------- */
+QLineEdit, QSpinBox, QComboBox {
+    background-color: #1b1c1e;
+    border: 1px solid #3a3c42;
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+
+QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
+    border: 1px solid #3a6ff7;
+}
+
+QComboBox::drop-down {
+    border: none;
+    width: 20px;
+}
+
+/* ---------- 슬라이더 ---------- */
+QSlider::groove:horizontal {
+    height: 4px;
+    background: #3a3c42;
+    border-radius: 2px;
+}
+
+QSlider::handle:horizontal {
+    background: #3a6ff7;
+    width: 16px;
+    height: 16px;
+    margin: -6px 0;
+    border-radius: 8px;
+}
+
+QSlider::sub-page:horizontal {
+    background: #3a6ff7;
+    border-radius: 2px;
+}
+
+/* ---------- 메뉴바 / 메뉴 ---------- */
+QMenuBar {
+    background-color: #232427;
+    border-bottom: 1px solid #313338;
+}
+
+QMenuBar::item:selected {
+    background-color: #2f3136;
+}
+
+QMenu {
+    background-color: #26272b;
+    border: 1px solid #3a3c42;
+}
+
+QMenu::item:selected {
+    background-color: #3a6ff7;
+}
+
+/* ---------- 상태바 ---------- */
+QStatusBar {
+    background-color: #232427;
+    border-top: 1px solid #313338;
+    color: #a8abb4;
+}
+
+QProgressBar {
+    border: none;
+    background-color: #2f3136;
+    border-radius: 4px;
+    height: 8px;
+    text-align: center;
+}
+
+QProgressBar::chunk {
+    background-color: #3a6ff7;
+    border-radius: 4px;
+}
