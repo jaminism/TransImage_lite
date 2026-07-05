@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import random
 from typing import Optional
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
-from PySide6.QtCore import QPointF, Qt
-from PySide6.QtGui import QColor, QPainter, QPixmap, QWheelEvent
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPixmap, QRadialGradient, QWheelEvent
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsPixmapItem,
@@ -13,7 +14,6 @@ from PySide6.QtWidgets import (
     QGraphicsScene,
     QGraphicsView,
     QLabel,
-    QProgressBar,
     QVBoxLayout,
     QWidget,
 )
@@ -25,33 +25,120 @@ _TEXT_PADDING = 8
 _HANDLE_BORDER = QColor("#7c5cff")
 _HANDLE_FILL = QColor(124, 92, 255, 40)
 
+_SPARKLE_COLORS = [QColor(255, 255, 255), QColor(185, 166, 255), QColor(124, 232, 255)]
+_SCAN_TICK_MS = 33
+_SCAN_STEP = 0.018
+_SPARKLE_SPAWN_CHANCE = 0.35
+_MAX_SPARKLES = 18
+
 
 class _BusyOverlay(QWidget):
-    """비동기 처리 중임을 시각적으로 알리는 반투명 오버레이(스피너 + 문구)."""
+    """비동기 처리 중임을 시각적으로 알리는 오버레이.
+
+    단조로운 진행률 막대 대신, 위아래로 오가는 스캔 라인과 무작위로 반짝이는
+    스파클 파티클을 직접 그려서 "AI가 이미지를 분석/처리하는" 느낌을 준다.
+    show()/hide() 시점에 맞춰 자동으로 애니메이션 타이머를 시작/정지한다.
+    """
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
-        self.setStyleSheet(
-            "_BusyOverlay { background-color: rgba(10, 8, 16, 175); border-radius: 0px; }"
-        )
         self._label = QLabel("처리 중...")
         self._label.setAlignment(Qt.AlignCenter)
         self._label.setStyleSheet("color: #ffffff; font-size: 16px; font-weight: 600; background: transparent;")
 
-        self._bar = QProgressBar()
-        self._bar.setRange(0, 0)
-        self._bar.setFixedWidth(220)
-        self._bar.setTextVisible(False)
-
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._label, alignment=Qt.AlignHCenter)
-        layout.addSpacing(10)
-        layout.addWidget(self._bar, alignment=Qt.AlignHCenter)
+
+        self._scan_y = 0.0
+        self._scan_dir = 1
+        self._sparkles: list[dict] = []
+        self._rng = random.Random()
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(_SCAN_TICK_MS)
+        self._timer.timeout.connect(self._on_tick)
+
         self.hide()
 
     def set_message(self, text: str) -> None:
         self._label.setText(text)
+
+    def start_animation(self) -> None:
+        self._scan_y = 0.0
+        self._scan_dir = 1
+        self._sparkles.clear()
+        self._timer.start()
+
+    def stop_animation(self) -> None:
+        self._timer.stop()
+
+    def _on_tick(self) -> None:
+        self._scan_y += _SCAN_STEP * self._scan_dir
+        if self._scan_y >= 1.0:
+            self._scan_y = 1.0
+            self._scan_dir = -1
+        elif self._scan_y <= 0.0:
+            self._scan_y = 0.0
+            self._scan_dir = 1
+
+        for sparkle in self._sparkles:
+            sparkle["age"] += 1
+        self._sparkles = [s for s in self._sparkles if s["age"] < s["lifetime"]]
+
+        if len(self._sparkles) < _MAX_SPARKLES and self._rng.random() < _SPARKLE_SPAWN_CHANCE:
+            self._sparkles.append(
+                {
+                    "x": self._rng.random(),
+                    "y": self._rng.random(),
+                    "radius": self._rng.uniform(4, 11),
+                    "color": self._rng.choice(_SPARKLE_COLORS),
+                    "age": 0,
+                    "lifetime": self._rng.randint(18, 36),
+                }
+            )
+
+        self.update()
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = self.rect()
+        painter.fillRect(rect, QColor(10, 8, 16, 190))
+
+        band_height = max(80.0, rect.height() * 0.18)
+        center_y = self._scan_y * rect.height()
+        gradient = QLinearGradient(0, center_y - band_height / 2, 0, center_y + band_height / 2)
+        gradient.setColorAt(0.0, QColor(124, 92, 255, 0))
+        gradient.setColorAt(0.5, QColor(124, 92, 255, 90))
+        gradient.setColorAt(1.0, QColor(124, 92, 255, 0))
+        painter.fillRect(QRectF(0, center_y - band_height / 2, rect.width(), band_height), gradient)
+
+        painter.setPen(QColor(200, 180, 255, 230))
+        painter.drawLine(0, int(center_y), rect.width(), int(center_y))
+
+        for sparkle in self._sparkles:
+            life_ratio = sparkle["age"] / sparkle["lifetime"]
+            alpha = max(0.0, 1.0 - abs(life_ratio - 0.5) * 2)
+            cx = sparkle["x"] * rect.width()
+            cy = sparkle["y"] * rect.height()
+            radius = sparkle["radius"]
+
+            inner = QColor(sparkle["color"])
+            inner.setAlpha(int(220 * alpha))
+            outer = QColor(sparkle["color"])
+            outer.setAlpha(0)
+
+            glow = QRadialGradient(QPointF(cx, cy), radius)
+            glow.setColorAt(0.0, inner)
+            glow.setColorAt(1.0, outer)
+
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(glow)
+            painter.drawEllipse(QPointF(cx, cy), radius, radius)
+
+        painter.end()
 
 
 class CanvasWidget(QGraphicsView):
@@ -108,8 +195,10 @@ class CanvasWidget(QGraphicsView):
             self._busy_overlay.setGeometry(self.rect())
             self._busy_overlay.show()
             self._busy_overlay.raise_()
+            self._busy_overlay.start_animation()
         else:
             self._busy_overlay.hide()
+            self._busy_overlay.stop_animation()
 
     # ------------------------------------------------------------------ 텍스트 드래그 오버레이
     #
