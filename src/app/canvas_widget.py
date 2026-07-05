@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PIL import Image, ImageDraw
+from PIL import Image
 from PIL.ImageQt import ImageQt
-from PySide6.QtCore import QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap, QWheelEvent
+from PySide6.QtCore import QPointF, Qt
+from PySide6.QtGui import QColor, QFont, QPainter, QPixmap, QWheelEvent
 from PySide6.QtWidgets import (
     QGraphicsItem,
-    QGraphicsPathItem,
     QGraphicsPixmapItem,
+    QGraphicsRectItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
     QGraphicsView,
@@ -20,6 +20,9 @@ from PySide6.QtWidgets import (
 )
 
 _CANVAS_BACKGROUND = QColor("#151617")
+_TEXT_PADDING = 8
+_HANDLE_BORDER = QColor("#7c5cff")
+_HANDLE_FILL = QColor(124, 92, 255, 40)
 
 
 class _BusyOverlay(QWidget):
@@ -51,14 +54,11 @@ class _BusyOverlay(QWidget):
 
 
 class CanvasWidget(QGraphicsView):
-    """이미지 표시/줌/팬/텍스트 드래그/지우개를 담당하는 캔버스.
+    """이미지 표시/줌/팬/텍스트 드래그를 담당하는 캔버스.
 
     실제 편집 로직(픽셀 계산)은 포함하지 않는다 — core.processors가 반환한 이미지를
-    set_image()로 전달받아 그리기만 담당한다. 단, 지우개 모드는 실시간 상호작용이
-    필요해 알파 채널을 직접 다듬는 최소한의 로직만 예외적으로 갖는다.
+    set_image()로 전달받아 그리기만 담당한다.
     """
-
-    erase_stroke_finished = Signal(object)
 
     def __init__(self) -> None:
         super().__init__()
@@ -70,19 +70,8 @@ class CanvasWidget(QGraphicsView):
         self.setBackgroundBrush(_CANVAS_BACKGROUND)
 
         self._pixmap_item: Optional[QGraphicsPixmapItem] = None
+        self._text_handle: Optional[QGraphicsRectItem] = None
         self._text_item: Optional[QGraphicsSimpleTextItem] = None
-
-        self._erase_mode = False
-        self._erasing = False
-        self._brush_radius = 24
-        self._erase_source: Optional[Image.Image] = None  # 원본 해상도 (스트로크 종료 시에만 갱신)
-        self._erase_preview: Optional[Image.Image] = None  # 화면 표시용 축소 프록시 (드래그 중 실시간 편집)
-        self._erase_scale = 1.0  # preview_size = source_size * scale
-        self._stroke_points: list[tuple[float, float, float]] = []  # (원본 좌표 x, y, 반지름)
-
-        self._lasso_mode = False
-        self._lasso_points: list[QPointF] = []  # 프록시(scene) 좌표
-        self._lasso_path_item: Optional[QGraphicsPathItem] = None
 
         self._busy_overlay = _BusyOverlay(self)
 
@@ -90,6 +79,7 @@ class CanvasWidget(QGraphicsView):
     def set_image(self, image: Optional[Image.Image]) -> None:
         self._scene.clear()
         self._pixmap_item = None
+        self._text_handle = None
         self._text_item = None
         if image is None:
             return
@@ -121,6 +111,12 @@ class CanvasWidget(QGraphicsView):
             self._busy_overlay.hide()
 
     # ------------------------------------------------------------------ 텍스트 드래그 오버레이
+    #
+    # 텍스트 자체(QGraphicsSimpleTextItem)를 직접 드래그 대상으로 삼으면, 글자가 짧거나
+    # 확대 배율이 낮을 때 실제 글리프 모양 밖을 클릭하면 드래그가 안 잡히는 문제가 있다.
+    # 그래서 여유 있는 패딩을 가진 사각형(_text_handle)을 실제 드래그 대상으로 두고,
+    # 텍스트는 그 안에 표시만 되는 자식 아이템으로 붙인다 — 항상 넉넉하고 일관된
+    # 히트박스를 보장한다.
     def show_text_overlay(
         self,
         text: str,
@@ -131,210 +127,40 @@ class CanvasWidget(QGraphicsView):
     ) -> None:
         if self._pixmap_item is None:
             return
-        if self._text_item is None:
-            self._text_item = QGraphicsSimpleTextItem()
-            self._text_item.setFlag(QGraphicsItem.ItemIsMovable, True)
-            self._text_item.setFlag(QGraphicsItem.ItemIsSelectable, True)
-            self._text_item.setZValue(10)
+        if self._text_handle is None:
+            self._text_handle = QGraphicsRectItem()
+            self._text_handle.setFlag(QGraphicsItem.ItemIsMovable, True)
+            self._text_handle.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            self._text_handle.setZValue(10)
+            self._text_handle.setPen(_HANDLE_BORDER)
+            self._text_handle.setBrush(_HANDLE_FILL)
             rect = self._pixmap_item.boundingRect()
-            self._text_item.setPos(QPointF(rect.width() / 2 - 40, rect.height() / 2 - size / 2))
-            self._scene.addItem(self._text_item)
+            self._text_handle.setPos(QPointF(rect.width() / 2 - 40, rect.height() / 2 - size / 2))
+            self._scene.addItem(self._text_handle)
+
+            self._text_item = QGraphicsSimpleTextItem(self._text_handle)
+            self._text_item.setAcceptedMouseButtons(Qt.NoButton)
 
         self._text_item.setText(text if text else " ")
         font = QFont(font_family or "Arial")
         font.setPixelSize(max(6, size))
         self._text_item.setFont(font)
         self._text_item.setBrush(QColor(color[0], color[1], color[2]))
-        self._text_item.setRotation(rotation)
+        self._text_item.setPos(_TEXT_PADDING, _TEXT_PADDING)
+
+        text_rect = self._text_item.boundingRect()
+        self._text_handle.setRect(0, 0, text_rect.width() + _TEXT_PADDING * 2, text_rect.height() + _TEXT_PADDING * 2)
+        self._text_handle.setTransformOriginPoint(self._text_handle.rect().center())
+        self._text_handle.setRotation(rotation)
 
     def get_text_overlay_position(self) -> tuple[int, int]:
-        if self._text_item is None:
+        if self._text_handle is None:
             return (20, 20)
-        pos = self._text_item.pos()
-        return (int(pos.x()), int(pos.y()))
+        pos = self._text_handle.pos()
+        return (int(pos.x()) + _TEXT_PADDING, int(pos.y()) + _TEXT_PADDING)
 
     def clear_text_overlay(self) -> None:
-        if self._text_item is not None:
-            self._scene.removeItem(self._text_item)
+        if self._text_handle is not None:
+            self._scene.removeItem(self._text_handle)  # 자식인 _text_item도 함께 제거됨
+            self._text_handle = None
             self._text_item = None
-
-    # ------------------------------------------------------------------ 지우개
-    #
-    # 고해상도 사진(수천만 픽셀)을 마우스 이동마다 그대로 QImage로 변환하면 변환 1회에
-    # 수백MB가 필요해 MemoryError가 난다. 그래서 화면 표시는 축소된 프록시 이미지에서만
-    # 실시간으로 지우고, 실제 원본 해상도 반영은 스트로크가 끝났을 때(마우스 뗄 때) 딱
-    # 한 번만 수행한다.
-    _PREVIEW_MAX_DIM = 1600
-
-    def _setup_erase_proxy(self, image: Image.Image) -> None:
-        self._erase_source = image.convert("RGBA")
-
-        max_dim = max(self._erase_source.size)
-        self._erase_scale = min(1.0, self._PREVIEW_MAX_DIM / max_dim) if max_dim > 0 else 1.0
-        if self._erase_scale < 1.0:
-            preview_size = (
-                max(1, round(self._erase_source.width * self._erase_scale)),
-                max(1, round(self._erase_source.height * self._erase_scale)),
-            )
-            self._erase_preview = self._erase_source.resize(preview_size, Image.BILINEAR)
-        else:
-            self._erase_preview = self._erase_source.copy()
-
-        self.setDragMode(QGraphicsView.NoDrag)
-        self._refresh_erase_pixmap()
-        if self._pixmap_item is not None:
-            # 프록시 크기가 원본과 다를 수 있으므로 sceneRect에 맞춰 뷰를 다시 맞춘다.
-            # (안 하면 mapToScene() 좌표가 이전 sceneRect 기준으로 어긋난다.)
-            self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
-
-    def begin_erase(self, image: Image.Image, brush_radius: int) -> None:
-        self._erase_mode = True
-        self._brush_radius = brush_radius
-        self._stroke_points = []
-        self._setup_erase_proxy(image)
-
-    def end_erase(self) -> None:
-        self._erase_mode = False
-        self._erasing = False
-        self._erase_source = None
-        self._erase_preview = None
-        self._stroke_points = []
-        self.setDragMode(QGraphicsView.ScrollHandDrag)
-
-    # ------------------------------------------------------------------ 영역 선택 지우기 (올가미)
-    def begin_lasso_erase(self, image: Image.Image) -> None:
-        self._lasso_mode = True
-        self._lasso_points = []
-        self._setup_erase_proxy(image)
-
-    def end_lasso_erase(self) -> None:
-        self._lasso_mode = False
-        self._lasso_points = []
-        if self._lasso_path_item is not None:
-            self._scene.removeItem(self._lasso_path_item)
-            self._lasso_path_item = None
-        self._erase_source = None
-        self._erase_preview = None
-        self.setDragMode(QGraphicsView.ScrollHandDrag)
-
-    def _update_lasso_path(self) -> None:
-        if len(self._lasso_points) < 2:
-            return
-        path = QPainterPath(self._lasso_points[0])
-        for point in self._lasso_points[1:]:
-            path.lineTo(point)
-        path.closeSubpath()
-
-        if self._lasso_path_item is None:
-            self._lasso_path_item = QGraphicsPathItem()
-            pen = QPen(QColor("#7c5cff"))
-            pen.setWidth(2)
-            pen.setStyle(Qt.DashLine)
-            self._lasso_path_item.setPen(pen)
-            self._lasso_path_item.setZValue(20)
-            self._scene.addItem(self._lasso_path_item)
-        self._lasso_path_item.setPath(path)
-
-    def _commit_lasso_selection(self) -> None:
-        if len(self._lasso_points) < 3 or self._erase_source is None:
-            self._lasso_points = []
-            if self._lasso_path_item is not None:
-                self._scene.removeItem(self._lasso_path_item)
-                self._lasso_path_item = None
-            return
-
-        src_points = [(p.x() / self._erase_scale, p.y() / self._erase_scale) for p in self._lasso_points]
-        result = self._erase_source.copy()
-        r, g, b, a = result.split()
-        ImageDraw.Draw(a).polygon(src_points, fill=0)
-        result = Image.merge("RGBA", (r, g, b, a))
-
-        self._erase_source = result
-        self._erase_preview = (
-            result.resize(self._erase_preview.size, Image.BILINEAR) if self._erase_scale < 1.0 else result.copy()
-        )
-        self._refresh_erase_pixmap()
-
-        self._lasso_points = []
-        if self._lasso_path_item is not None:
-            self._scene.removeItem(self._lasso_path_item)
-            self._lasso_path_item = None
-
-        self.erase_stroke_finished.emit(result.copy())
-
-    def set_brush_radius(self, radius: int) -> None:
-        self._brush_radius = radius
-
-    def _refresh_erase_pixmap(self) -> None:
-        if self._erase_preview is None:
-            return
-        qimage = ImageQt(self._erase_preview)
-        pixmap = QPixmap.fromImage(qimage)
-        if self._pixmap_item is None:
-            self._pixmap_item = self._scene.addPixmap(pixmap)
-        else:
-            self._pixmap_item.setPixmap(pixmap)
-        # 프록시 크기가 원본 이미지 크기와 다르므로 mapToScene() 좌표가 프록시 픽셀
-        # 좌표와 일치하도록 매번 sceneRect를 프록시 크기에 맞춘다.
-        self._scene.setSceneRect(pixmap.rect())
-
-    def _erase_at(self, view_pos) -> None:
-        if self._erase_preview is None:
-            return
-        scene_pos = self.mapToScene(view_pos)
-        x, y = scene_pos.x(), scene_pos.y()
-        r_preview = max(1.0, self._brush_radius * self._erase_scale)
-
-        draw = ImageDraw.Draw(self._erase_preview)
-        draw.ellipse((x - r_preview, y - r_preview, x + r_preview, y + r_preview), fill=(0, 0, 0, 0))
-        self._refresh_erase_pixmap()
-
-        self._stroke_points.append((x / self._erase_scale, y / self._erase_scale, float(self._brush_radius)))
-
-    def _commit_erase_stroke(self) -> None:
-        if not self._stroke_points or self._erase_source is None:
-            return
-        result = self._erase_source.copy()
-        draw = ImageDraw.Draw(result)
-        for sx, sy, sr in self._stroke_points:
-            draw.ellipse((sx - sr, sy - sr, sx + sr, sy + sr), fill=(0, 0, 0, 0))
-        self._erase_source = result
-        self._stroke_points = []
-        self.erase_stroke_finished.emit(result.copy())
-
-    def mousePressEvent(self, event: QMouseEvent) -> None:
-        if self._lasso_mode and event.button() == Qt.LeftButton and self._erase_preview is not None:
-            self._lasso_points = [self.mapToScene(event.position().toPoint())]
-            self._update_lasso_path()
-            event.accept()
-            return
-        if self._erase_mode and event.button() == Qt.LeftButton and self._erase_preview is not None:
-            self._erasing = True
-            self._erase_at(event.position().toPoint())
-            event.accept()
-            return
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event: QMouseEvent) -> None:
-        if self._lasso_mode and self._lasso_points:
-            self._lasso_points.append(self.mapToScene(event.position().toPoint()))
-            self._update_lasso_path()
-            event.accept()
-            return
-        if self._erase_mode and self._erasing:
-            self._erase_at(event.position().toPoint())
-            event.accept()
-            return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
-        if self._lasso_mode and self._lasso_points:
-            self._commit_lasso_selection()
-            event.accept()
-            return
-        if self._erase_mode and self._erasing:
-            self._erasing = False
-            self._commit_erase_stroke()
-            event.accept()
-            return
-        super().mouseReleaseEvent(event)

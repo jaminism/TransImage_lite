@@ -54,8 +54,10 @@ class TextPanel(QWidget):
         add_font_btn.clicked.connect(self._on_add_font)
 
         self.size_spin = QSpinBox()
-        self.size_spin.setRange(8, 300)
-        self.size_spin.setValue(48)
+        self.size_spin.setRange(1, 30)
+        self.size_spin.setValue(6)
+        self.size_spin.setSuffix("%")
+        self.size_spin.setToolTip("이미지 높이 대비 텍스트 크기 비율 — 해상도가 달라져도 항상 같은 비율로 보입니다")
         self.size_spin.setMinimumWidth(90)
         self.size_spin.valueChanged.connect(self._emit_overlay_changed)
 
@@ -88,7 +90,7 @@ class TextPanel(QWidget):
         form.addRow("텍스트", self.text_input)
         form.addRow("폰트", self.font_combo)
         form.addRow("", add_font_btn)
-        form.addRow("크기(px)", self.size_spin)
+        form.addRow("크기(이미지 높이 대비)", self.size_spin)
         form.addRow("회전(도)", self.rotation_spin)
         form.addRow("색상", self.color_btn)
         form.addRow(self.shadow_check)
@@ -112,7 +114,7 @@ class TextPanel(QWidget):
         family = self.font_combo.currentFont().family()
         return {
             "text": self.text_input.text(),
-            "size": self.size_spin.value(),
+            "size_percent": self.size_spin.value(),
             "color": (self._color.red(), self._color.green(), self._color.blue(), 255),
             "rotation": float(self.rotation_spin.value()),
             "font_family": family,
@@ -169,7 +171,7 @@ class TextPanel(QWidget):
         self.font_combo.blockSignals(False)
 
         self.size_spin.blockSignals(True)
-        self.size_spin.setValue(48)
+        self.size_spin.setValue(6)
         self.size_spin.blockSignals(False)
 
         self.rotation_spin.blockSignals(True)

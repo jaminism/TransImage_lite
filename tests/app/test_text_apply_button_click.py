@@ -13,7 +13,7 @@ def test_real_button_click_applies_text(qtbot, sample_rgb_image):
     panel = window.text_panel
     qtbot.keyClicks(panel.text_input, "Hello")
     assert panel.text_input.text() == "Hello"
-    assert window.canvas._text_item is not None
+    assert window.canvas._text_handle is not None
 
     before = window.document.current
     apply_btn = next(b for b in panel.findChildren(QPushButton) if "적용" in b.text())
