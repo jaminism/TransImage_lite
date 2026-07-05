@@ -12,6 +12,7 @@ from PySide6.QtPrintSupport import QPrinter, QPrintDialog
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QListWidget,
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStackedWidget,
     QToolBar,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -145,7 +147,8 @@ class MainWindow(QMainWindow):
 
     def _build_layout(self) -> None:
         self.sidebar = QListWidget()
-        self.sidebar.setFixedWidth(190)
+        self.sidebar.setObjectName("sidebarList")
+        self.sidebar.setFrameShape(QFrame.NoFrame)
         self.sidebar.setIconSize(QSize(20, 20))
 
         self._add_sidebar_header("편집 도구")
@@ -162,25 +165,52 @@ class MainWindow(QMainWindow):
         self.sidebar.currentRowChanged.connect(self._on_sidebar_row_changed)
 
         self.properties_panel = QStackedWidget()
+        self.properties_panel.setObjectName("propertiesStack")
         for panel in self._panels:
             self.properties_panel.addWidget(panel)
-        self.properties_panel.setFixedWidth(320)
 
         # 사이드바/속성 패널은 이미지 유무와 상관없이 항상 보인다 — 가운데 영역(홈 화면 vs
         # 캔버스)만 전환한다. 이렇게 하면 이미지를 열기 전에도 어떤 도구들이 있는지 보이고,
         # 도구를 먼저 눌러둔 채로 사진을 나중에 가져올 수도 있다.
         self.center_stack = QStackedWidget()
+        self.center_stack.setObjectName("canvasStack")
         self.center_stack.addWidget(self.home_widget)  # STACK_HOME
         self.center_stack.addWidget(self.canvas)  # STACK_EDITOR
 
+        # 참고 디자인(IMG_9186.png)처럼 사이드바/캔버스/속성 패널을 서로 붙은 사각
+        # 영역이 아니라, 간격을 두고 모서리가 둥근 독립된 카드로 분리해 표시한다.
+        sidebar_card = self._wrap_in_card(self.sidebar, "sidebarCard", fixed_width=208)
+        canvas_card = self._wrap_in_card(self.center_stack, "canvasCard")
+        properties_card = self._wrap_in_card(self.properties_panel, "propertiesCard", fixed_width=340)
+
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self.sidebar)
-        splitter.addWidget(self.center_stack)
-        splitter.addWidget(self.properties_panel)
+        splitter.setObjectName("mainSplitter")
+        splitter.setHandleWidth(14)
+        splitter.setChildrenCollapsible(False)
+        splitter.addWidget(sidebar_card)
+        splitter.addWidget(canvas_card)
+        splitter.addWidget(properties_card)
         splitter.setStretchFactor(1, 1)
-        self.setCentralWidget(splitter)
+
+        central = QWidget()
+        central_layout = QHBoxLayout(central)
+        central_layout.setContentsMargins(12, 8, 12, 12)
+        central_layout.addWidget(splitter)
+        self.setCentralWidget(central)
 
         self.sidebar.setCurrentRow(1)  # 첫 번째 실제 도구("크기 / 회전")
+
+    @staticmethod
+    def _wrap_in_card(inner: QWidget, object_name: str, fixed_width: int | None = None) -> QFrame:
+        """사이드바/캔버스/속성 패널을 둥근 모서리의 독립된 카드로 감싼다."""
+        card = QFrame()
+        card.setObjectName(object_name)
+        if fixed_width is not None:
+            card.setFixedWidth(fixed_width)
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.addWidget(inner)
+        return card
 
     def _add_sidebar_header(self, text: str) -> None:
         item = QListWidgetItem(text)
@@ -271,12 +301,18 @@ class MainWindow(QMainWindow):
     def _build_brand_widget(self) -> QWidget:
         app_icon_path = Path(__file__).parent.parent / "resources" / "icons" / "app.ico"
 
+        # QWidget/QLabel의 배경색은 기본적으로 전역 QSS의 QWidget 규칙(#1e1f22)을
+        # 물려받는데, 이 위젯은 툴바(#201a2e) 위에 얹혀 있어 배경색이 서로 달라
+        # 눈에 띄는 사각형으로 보였다. objectName을 지정해 dark.qss에서
+        # "배경 투명"으로 명시적으로 덮어써 툴바 배경과 하나로 보이게 한다.
         brand = QWidget()
+        brand.setObjectName("brandWidget")
         layout = QHBoxLayout(brand)
         layout.setContentsMargins(6, 0, 16, 0)
         layout.setSpacing(8)
 
         icon_label = QLabel()
+        icon_label.setObjectName("brandIcon")
         if app_icon_path.exists():
             icon_label.setPixmap(QPixmap(str(app_icon_path)).scaled(
                 22, 22, Qt.KeepAspectRatio, Qt.SmoothTransformation
@@ -284,7 +320,8 @@ class MainWindow(QMainWindow):
         layout.addWidget(icon_label)
 
         name_label = QLabel("Trans Pro")
-        name_label.setStyleSheet("font-size: 15px; font-weight: 700; color: #ffffff;")
+        name_label.setObjectName("brandName")
+        name_label.setStyleSheet("font-size: 15px; font-weight: 700; color: #ffffff; background: transparent;")
         layout.addWidget(name_label)
 
         return brand

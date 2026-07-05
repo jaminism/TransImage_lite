@@ -6,13 +6,41 @@
     color: #e4e6eb;
 }
 
-QMainWindow, QWidget {
-    background-color: #1e1f22;
+/* 앱의 실제 배경색은 QMainWindow에만 지정하고, 그 안의 일반 QWidget은 기본적으로
+   투명하게 둔다. 예전에는 "QMainWindow, QWidget { background-color: ... }"로
+   모든 QWidget에 배경색을 강제했는데, 이게 카드/버튼 위에 얹힌 순수 레이아웃용
+   QWidget(브랜드 위젯, 홈 화면의 wrapper 등)에도 그대로 적용되어 주변과 다른 색의
+   사각형이 떠 보이는 문제가 반복됐다. QWidget을 기본 투명으로 두면 각 위젯은
+   자기 부모(카드/툴바 등)의 배경을 그대로 보여주고, 실제로 배경이 필요한 요소만
+   아래에서 objectName/타입 선택자로 명시적으로 칠한다.
+*/
+QMainWindow {
+    background-color: #131219;
+}
+
+QWidget {
+    background-color: transparent;
+}
+
+/* ---------- 카드형 레이아웃 (사이드바 / 캔버스 / 속성 패널) ---------- */
+/* IMG_9186.png 참고 디자인처럼 세 영역을 서로 붙은 사각 블록이 아니라, 간격을 두고
+   모서리가 둥근 독립된 카드로 분리해 표시한다. */
+QFrame#sidebarCard, QFrame#canvasCard, QFrame#propertiesCard {
+    background-color: #1c1a24;
+    border: 1px solid #2c2740;
+    border-radius: 18px;
+}
+
+QSplitter#mainSplitter::handle {
+    background-color: transparent;
 }
 
 QSplitter::handle {
-    background-color: #2b2d31;
-    width: 1px;
+    background-color: transparent;
+}
+
+QStackedWidget > QWidget {
+    padding: 12px;
 }
 
 /* ---------- 툴바 ---------- */
@@ -23,10 +51,14 @@ QToolBar {
     spacing: 4px;
 }
 
+QWidget#brandWidget, QLabel#brandIcon, QLabel#brandName {
+    background-color: transparent;
+}
+
 QToolButton {
     background-color: transparent;
     border: none;
-    border-radius: 6px;
+    border-radius: 8px;
     padding: 6px 8px;
 }
 
@@ -39,17 +71,15 @@ QToolButton:pressed {
 }
 
 /* ---------- 사이드바 ---------- */
-QListWidget {
-    background-color: #201a2e;
+QListWidget#sidebarList {
     border: none;
-    border-right: 1px solid #33284d;
-    padding: 6px;
+    padding: 4px;
     outline: none;
 }
 
 QListWidget::item {
     padding: 10px 8px;
-    border-radius: 8px;
+    border-radius: 10px;
     margin: 2px 0;
 }
 
@@ -62,17 +92,6 @@ QListWidget::item:selected {
     color: #ffffff;
 }
 
-/* ---------- 속성 패널 (카드형) ---------- */
-QStackedWidget {
-    background-color: #26272b;
-    border-left: 1px solid #33284d;
-}
-
-QStackedWidget > QWidget {
-    background-color: #26272b;
-    padding: 12px;
-}
-
 QLabel {
     color: #e4e6eb;
     background: transparent;
@@ -82,7 +101,7 @@ QLabel {
 QPushButton {
     background-color: #2f3136;
     border: 1px solid #3a3c42;
-    border-radius: 6px;
+    border-radius: 10px;
     padding: 8px 14px;
 }
 
@@ -102,6 +121,7 @@ QPushButton:disabled {
 QPushButton#primaryButton {
     background-color: #7c5cff;
     border: none;
+    border-radius: 18px;
     color: #ffffff;
     font-weight: 600;
 }
@@ -114,11 +134,28 @@ QPushButton#primaryButton:pressed {
     background-color: #6647d9;
 }
 
+/* ---------- 홈 화면 카드 ---------- */
+QPushButton#quickActionCard, QPushButton#recentFileCard {
+    background-color: #232333;
+    border: 1px solid #322a4a;
+    border-radius: 14px;
+    padding: 10px;
+}
+
+QPushButton#quickActionCard:hover, QPushButton#recentFileCard:hover {
+    background-color: #2a2a3d;
+    border: 1px solid #7c5cff;
+}
+
+QPushButton#quickActionCard:pressed, QPushButton#recentFileCard:pressed {
+    background-color: #201f2d;
+}
+
 /* ---------- 입력 컨트롤 ---------- */
 QLineEdit, QSpinBox, QComboBox, QFontComboBox {
     background-color: #1b1c1e;
     border: 1px solid #3a3c42;
-    border-radius: 6px;
+    border-radius: 10px;
     padding: 6px 8px;
     min-height: 20px;
 }
@@ -136,8 +173,8 @@ QComboBox::drop-down, QFontComboBox::drop-down {
     border-left: 1px solid #3a3c42;
     width: 20px;
     background-color: #2f3136;
-    border-top-right-radius: 6px;
-    border-bottom-right-radius: 6px;
+    border-top-right-radius: 9px;
+    border-bottom-right-radius: 9px;
 }
 
 QComboBox::drop-down:hover, QFontComboBox::drop-down:hover {
@@ -168,12 +205,12 @@ QSpinBox::up-button, QSpinBox::down-button {
 
 QSpinBox::up-button {
     subcontrol-position: top right;
-    border-top-right-radius: 6px;
+    border-top-right-radius: 9px;
 }
 
 QSpinBox::down-button {
     subcontrol-position: bottom right;
-    border-bottom-right-radius: 6px;
+    border-bottom-right-radius: 9px;
 }
 
 QSpinBox::up-button:hover, QSpinBox::down-button:hover {
@@ -235,6 +272,12 @@ QMenuBar::item:selected {
 QMenu {
     background-color: #26272b;
     border: 1px solid #3a3c42;
+    border-radius: 10px;
+}
+
+QMenu::item {
+    border-radius: 6px;
+    padding: 4px 10px;
 }
 
 QMenu::item:selected {
@@ -267,5 +310,5 @@ QToolTip {
     color: #f2f2f7;
     border: 1px solid #7c5cff;
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: 8px;
 }
