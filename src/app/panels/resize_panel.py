@@ -33,6 +33,7 @@ class ResizePanel(QWidget):
     """크기 조절 / 회전 / 뒤집기 도구 패널. apply_requested(fn, kwargs, is_async)를 발생시킨다."""
 
     apply_requested = Signal(object, dict, bool)
+    angle_apply_requested = Signal(float)
 
     def __init__(self) -> None:
         super().__init__()
@@ -125,7 +126,11 @@ class ResizePanel(QWidget):
         self.apply_requested.emit(rotate_image, {"angle": angle}, False)
 
     def _on_apply_angle(self) -> None:
-        self.apply_requested.emit(rotate_image, {"angle": float(self.angle_spin.value())}, False)
+        # 아이콘 회전(90도)과 달리, 각도 직접 입력은 "도구에 들어왔을 때(또는 마지막
+        # 크기조절/아이콘 회전 시점) 이미지 기준 절대 각도"로 취급해야 한다. 그래야
+        # 5도 적용 후 0도로 다시 적용하면 정확히 원래대로 돌아온다 — MainWindow가
+        # 전용 신호로 baseline을 기준으로 재계산하도록 별도 신호를 쓴다.
+        self.angle_apply_requested.emit(float(self.angle_spin.value()))
 
     def _flip(self, horizontal: bool) -> None:
         self.apply_requested.emit(flip_image, {"horizontal": horizontal}, False)
