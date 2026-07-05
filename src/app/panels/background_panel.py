@@ -4,7 +4,6 @@ from PySide6.QtCore import Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QColorDialog,
-    QFrame,
     QLabel,
     QPushButton,
     QVBoxLayout,
@@ -19,7 +18,6 @@ class BackgroundPanel(QWidget):
     """배경 제거 도구 패널. 배경 제거는 무거운 연산이라 비동기(is_async=True)로 요청한다."""
 
     apply_requested = Signal(object, dict, bool)
-    lasso_requested = Signal(bool)  # True=영역 선택 지우기 시작, False=중지
 
     def __init__(self) -> None:
         super().__init__()
@@ -40,14 +38,6 @@ class BackgroundPanel(QWidget):
         fill_btn.setIcon(icon("fill"))
         fill_btn.clicked.connect(self._on_fill)
 
-        divider = QFrame()
-        divider.setFrameShape(QFrame.HLine)
-
-        self.lasso_btn = QPushButton(" 영역 선택 지우기 시작")
-        self.lasso_btn.setIcon(icon("erase"))
-        self.lasso_btn.setCheckable(True)
-        self.lasso_btn.toggled.connect(self._on_lasso_toggled)
-
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<b>배경 제거</b>"))
         layout.addWidget(QLabel("피사체만 남기고 배경을 투명하게 만듭니다."))
@@ -55,10 +45,6 @@ class BackgroundPanel(QWidget):
         layout.addWidget(QLabel("배경 제거 후 원하는 단색으로 채울 수 있습니다."))
         layout.addWidget(self.color_btn)
         layout.addWidget(fill_btn)
-        layout.addWidget(divider)
-        layout.addWidget(QLabel("<b>영역 선택 지우기</b>"))
-        layout.addWidget(QLabel("마우스로 원하는 영역을 자유롭게 그리면(올가미), 그 영역만 지워집니다."))
-        layout.addWidget(self.lasso_btn)
         layout.addStretch(1)
 
     def _update_color_button(self) -> None:
@@ -73,10 +59,6 @@ class BackgroundPanel(QWidget):
 
     def _on_remove(self) -> None:
         self.apply_requested.emit(remove_background, {}, True)
-
-    def _on_lasso_toggled(self, checked: bool) -> None:
-        self.lasso_btn.setText(" 영역 선택 지우기 중지" if checked else " 영역 선택 지우기 시작")
-        self.lasso_requested.emit(checked)
 
     def _on_fill(self) -> None:
         rgb = (self._fill_color.red(), self._fill_color.green(), self._fill_color.blue())
