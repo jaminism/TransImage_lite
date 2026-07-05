@@ -81,6 +81,20 @@ class ResizePanel(QWidget):
             rotate_row.addWidget(btn)
         rotate_row.addStretch(1)
 
+        self.angle_spin = QSpinBox()
+        self.angle_spin.setRange(-359, 359)
+        self.angle_spin.setValue(0)
+        self.angle_spin.setSuffix("°")
+        self.angle_spin.setToolTip("시계 방향이 양수입니다")
+
+        angle_apply_btn = QPushButton(" 각도 적용")
+        angle_apply_btn.setIcon(icon("check"))
+        angle_apply_btn.clicked.connect(self._on_apply_angle)
+
+        angle_row = QHBoxLayout()
+        angle_row.addWidget(self.angle_spin, stretch=1)
+        angle_row.addWidget(angle_apply_btn)
+
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<b>크기 조절</b>"))
         layout.addLayout(form)
@@ -88,6 +102,8 @@ class ResizePanel(QWidget):
         layout.addSpacing(12)
         layout.addWidget(QLabel("<b>회전 / 뒤집기</b>"))
         layout.addLayout(rotate_row)
+        layout.addWidget(QLabel("각도 직접 입력"))
+        layout.addLayout(angle_row)
         layout.addStretch(1)
 
     def _on_apply_resize(self) -> None:
@@ -107,6 +123,9 @@ class ResizePanel(QWidget):
 
     def _rotate(self, angle: float) -> None:
         self.apply_requested.emit(rotate_image, {"angle": angle}, False)
+
+    def _on_apply_angle(self) -> None:
+        self.apply_requested.emit(rotate_image, {"angle": float(self.angle_spin.value())}, False)
 
     def _flip(self, horizontal: bool) -> None:
         self.apply_requested.emit(flip_image, {"horizontal": horizontal}, False)
