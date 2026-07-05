@@ -219,11 +219,15 @@ class CanvasWidget(QGraphicsView):
         rotation: float = 0.0,
         font_path: str | None = None,
         shadow: bool = True,
+        bold: bool = False,
+        italic: bool = False,
     ) -> None:
         if self._pixmap_item is None:
             return
 
-        layer = render_text_preview(text, font_path=font_path, size=size, color=color, shadow=shadow)
+        layer = render_text_preview(
+            text, font_path=font_path, size=size, color=color, shadow=shadow, bold=bold, italic=italic
+        )
         qimage = ImageQt(layer)
         pixmap = QPixmap.fromImage(qimage)
 

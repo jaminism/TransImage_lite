@@ -50,3 +50,29 @@ def test_render_text_preview_renders_korean_without_tofu(sample_rgb_image):
     preview = render_text_preview("안녕", size=32, color=(255, 255, 255, 255))
     alpha = preview.split()[-1]
     assert alpha.getextrema()[1] > 0  # 뭔가는 그려졌어야 한다 (전부 투명 == 렌더링 실패)
+
+
+def test_bold_renders_thicker_strokes_than_regular():
+    """굵게(bold)는 폰트 파일의 실제 Bold 변형 유무와 무관하게 stroke_width로 획을
+    두껍게 그려서 흉내내므로, 불투명 픽셀 수(잉크량)가 일반보다 항상 더 많아야 한다."""
+    regular = render_text_preview("Hi", size=48, color=(255, 255, 255, 255), shadow=False, bold=False)
+    bold = render_text_preview("Hi", size=48, color=(255, 255, 255, 255), shadow=False, bold=True)
+
+    regular_ink = sum(1 for a in regular.split()[-1].tobytes() if a > 0)
+    bold_ink = sum(1 for a in bold.split()[-1].tobytes() if a > 0)
+    assert bold_ink > regular_ink
+
+
+def test_italic_shears_layer_wider_than_regular():
+    """기울임(italic)은 폰트 교체 없이 렌더링된 레이어를 어파인 시어로 기울이므로,
+    가로 폭이 시어만큼 늘어나야 한다(위쪽이 오른쪽으로 밀림)."""
+    regular = render_text_preview("Hi", size=48, color=(255, 255, 255, 255), shadow=False, italic=False)
+    italic = render_text_preview("Hi", size=48, color=(255, 255, 255, 255), shadow=False, italic=True)
+
+    assert italic.width > regular.width
+    assert italic.height == regular.height
+
+
+def test_add_text_supports_bold_and_italic_together(sample_rgb_image):
+    result = add_text(sample_rgb_image, "Hi", position=(0, 0), size=20, bold=True, italic=True)
+    assert result.mode == "RGBA"

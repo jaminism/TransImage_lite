@@ -67,9 +67,22 @@ class TextPanel(QWidget):
         self.rotation_spin.setMinimumWidth(90)
         self.rotation_spin.valueChanged.connect(self._emit_overlay_changed)
 
+        self.bold_check = QCheckBox("굵게")
+        self.bold_check.setChecked(False)
+        self.bold_check.toggled.connect(self._emit_overlay_changed)
+
+        self.italic_check = QCheckBox("기울임")
+        self.italic_check.setChecked(False)
+        self.italic_check.toggled.connect(self._emit_overlay_changed)
+
         self.shadow_check = QCheckBox("그림자 효과")
         self.shadow_check.setChecked(False)
         self.shadow_check.toggled.connect(self._emit_overlay_changed)
+
+        style_row = QHBoxLayout()
+        style_row.addWidget(self.bold_check)
+        style_row.addWidget(self.italic_check)
+        style_row.addStretch(1)
 
         self.color_btn = QPushButton()
         self.color_btn.setIcon(icon("fill"))
@@ -94,6 +107,7 @@ class TextPanel(QWidget):
         form.addRow("크기(이미지 높이 대비)", self.size_spin)
         form.addRow("회전(도)", self.rotation_spin)
         form.addRow("색상", self.color_btn)
+        form.addRow("스타일", style_row)
         form.addRow(self.shadow_check)
 
         btn_row = QHBoxLayout()
@@ -121,6 +135,8 @@ class TextPanel(QWidget):
             "font_family": family,
             "font_path": self._resolve_font_path(family),
             "shadow": self.shadow_check.isChecked(),
+            "bold": self.bold_check.isChecked(),
+            "italic": self.italic_check.isChecked(),
         }
 
     def _resolve_font_path(self, family: str) -> str | None:
@@ -181,5 +197,7 @@ class TextPanel(QWidget):
         self._color = QColor(255, 255, 255)
         self._update_color_button()
         self.shadow_check.setChecked(False)
+        self.bold_check.setChecked(False)
+        self.italic_check.setChecked(False)
 
         self.reset_requested.emit()
