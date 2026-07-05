@@ -35,6 +35,7 @@ from app.panels.enhance_panel import EnhancePanel
 from app.panels.quality_panel import QualityPanel
 from app.panels.resize_panel import ResizePanel
 from app.panels.text_panel import TextPanel
+from app.zoom_control import ZoomControl
 from core.image_document import ImageDocument
 from core.processors.io import SUPPORTED_EXTENSIONS, open_image, save_image
 from core.processors.printer import fit_to_page
@@ -338,6 +339,13 @@ class MainWindow(QMainWindow):
         self.status_progress.setMaximumWidth(160)
         self.status_progress.setVisible(False)
         self.statusBar().addPermanentWidget(self.status_progress)
+
+        self.zoom_control = ZoomControl()
+        self.zoom_control.zoom_percent_changed.connect(self.canvas.set_zoom_percent)
+        self.zoom_control.fit_requested.connect(self.canvas.zoom_to_fit)
+        self.canvas.zoom_changed.connect(self.zoom_control.set_zoom_percent)
+        self.statusBar().addPermanentWidget(self.zoom_control)
+
         self.statusBar().showMessage("이미지를 열어주세요 (Ctrl+O)")
 
     # ------------------------------------------------------------------ 사이드바 / 도구 전환
@@ -392,6 +400,7 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "열기 실패", f"이미지를 열 수 없습니다:\n{exc}")
             return
         self.document.load(image)
+        self.canvas.reset_zoom_mode()
         self._current_path = path
         self._remember_recent_file(path)
         self.center_stack.setCurrentIndex(STACK_EDITOR)
