@@ -6,7 +6,7 @@ from typing import Optional
 from PIL import Image
 from PIL.ImageQt import ImageQt
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPixmap, QRadialGradient, QWheelEvent
+from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPixmap, QRadialGradient, QWheelEvent
 from PySide6.QtWidgets import (
     QGraphicsItem,
     QGraphicsPixmapItem,
@@ -24,6 +24,42 @@ _CANVAS_BACKGROUND = QColor("#151617")
 _TEXT_PADDING = 8
 _HANDLE_BORDER = QColor("#7c5cff")
 _HANDLE_FILL = QColor(124, 92, 255, 40)
+
+_CHECKER_TILE = 12
+_CHECKER_LIGHT = QColor("#3a3b40")
+_CHECKER_DARK = QColor("#2a2b2f")
+
+
+def _has_transparency(image: Image.Image) -> bool:
+    if image.mode not in ("RGBA", "LA"):
+        return False
+    alpha = image.getchannel("A")
+    return alpha.getextrema()[0] < 255
+
+
+_checkerboard_brush_cache: QBrush | None = None
+
+
+def _checkerboard_brush() -> QBrush:
+    """배경 제거로 투명해진 영역을 표시할 체커보드 타일 브러시를 만든다.
+
+    투명 영역을 캔버스와 같은 단색으로 그리면 사진 가장자리가 캔버스 배경에 묻혀
+    실제로는 크기가 그대로인데도 사진이 작아진 것처럼 보이는 착시가 생긴다.
+
+    QPixmap은 QApplication이 생성된 뒤에만 만들 수 있어, 모듈을 import하는 시점이
+    아니라 실제로 처음 필요할 때(첫 번째 투명 이미지 표시 시점)까지 늦춰서 만든다.
+    """
+    global _checkerboard_brush_cache
+    if _checkerboard_brush_cache is None:
+        size = _CHECKER_TILE * 2
+        tile = QPixmap(size, size)
+        tile.fill(_CHECKER_LIGHT)
+        painter = QPainter(tile)
+        painter.fillRect(0, 0, _CHECKER_TILE, _CHECKER_TILE, _CHECKER_DARK)
+        painter.fillRect(_CHECKER_TILE, _CHECKER_TILE, _CHECKER_TILE, _CHECKER_TILE, _CHECKER_DARK)
+        painter.end()
+        _checkerboard_brush_cache = QBrush(tile)
+    return _checkerboard_brush_cache
 
 _SPARKLE_COLORS = [QColor(255, 255, 255), QColor(185, 166, 255), QColor(124, 232, 255)]
 _SCAN_TICK_MS = 33
@@ -158,6 +194,7 @@ class CanvasWidget(QGraphicsView):
         self.setBackgroundBrush(_CANVAS_BACKGROUND)
 
         self._pixmap_item: Optional[QGraphicsPixmapItem] = None
+        self._checkerboard_item: Optional[QGraphicsRectItem] = None
         self._text_handle: Optional[QGraphicsRectItem] = None
         self._text_item: Optional[QGraphicsPixmapItem] = None
 
@@ -167,12 +204,20 @@ class CanvasWidget(QGraphicsView):
     def set_image(self, image: Optional[Image.Image]) -> None:
         self._scene.clear()
         self._pixmap_item = None
+        self._checkerboard_item = None
         self._text_handle = None
         self._text_item = None
         if image is None:
             return
         qimage = ImageQt(image)
         pixmap = QPixmap.fromImage(qimage)
+
+        if _has_transparency(image):
+            self._checkerboard_item = self._scene.addRect(
+                0, 0, pixmap.width(), pixmap.height(), Qt.NoPen, _checkerboard_brush()
+            )
+            self._checkerboard_item.setZValue(-1)
+
         self._pixmap_item = self._scene.addPixmap(pixmap)
         self._scene.setSceneRect(pixmap.rect())
         self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
