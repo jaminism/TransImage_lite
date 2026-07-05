@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 
 from PIL import Image
@@ -51,7 +52,7 @@ PANEL_ERASE = 5
 TOOL_PANEL_LABELS = ["크기/회전", "보정", "품질 개선", "텍스트", "배경 제거", "지우개"]
 
 _OPEN_FILTER = "이미지 파일 (*.png *.jpg *.jpeg *.bmp *.webp)"
-_SAVE_FILTER = "PNG (*.png);;JPEG (*.jpg);;WEBP (*.webp);;BMP (*.bmp)"
+_SAVE_FILTER = "PNG (*.png);;JPEG (*.jpg *.jpeg);;WEBP (*.webp);;BMP (*.bmp)"
 _DEFAULT_SAVE_QUALITY = 90
 
 _ASYNC_BUSY_LABELS = {
@@ -119,6 +120,8 @@ class MainWindow(QMainWindow):
         self.enhance_panel.reset_requested.connect(self._on_enhance_reset)
         self.text_panel.overlay_changed.connect(self._on_text_overlay_changed)
         self.text_panel.text_apply_requested.connect(self._on_text_apply)
+        self.text_panel.reset_requested.connect(self._on_text_reset)
+        self.background_panel.lasso_requested.connect(self._on_lasso_toggle)
         self.erase_panel.brush_size_changed.connect(self.canvas.set_brush_radius)
         self.canvas.erase_stroke_finished.connect(self._on_erase_stroke_finished)
 
@@ -284,6 +287,8 @@ class MainWindow(QMainWindow):
             self.canvas.end_erase()
         if self._active_panel_index == PANEL_TEXT:
             self.canvas.clear_text_overlay()
+        if self._active_panel_index == PANEL_BACKGROUND and self.background_panel.lasso_btn.isChecked():
+            self.background_panel.lasso_btn.setChecked(False)  # end_lasso_erase()는 토글 신호로 처리됨
 
         self._active_panel_index = index
         self.properties_panel.setCurrentIndex(index)
@@ -423,6 +428,10 @@ class MainWindow(QMainWindow):
         self._update_actions_enabled()
         self.statusBar().showMessage("텍스트가 추가되었습니다.")
 
+    def _on_text_reset(self) -> None:
+        self.canvas.clear_text_overlay()
+        self.statusBar().showMessage("텍스트 도구가 초기화되었습니다.")
+
     # ------------------------------------------------------------------ 지우개
     def _on_erase_stroke_finished(self, image: Image.Image) -> None:
         try:
@@ -433,15 +442,28 @@ class MainWindow(QMainWindow):
         self._update_actions_enabled()
         # 캔버스는 이미 지워진 결과를 표시 중이므로 _refresh_canvas()를 다시 호출하지 않는다.
 
+    def _on_lasso_toggle(self, start: bool) -> None:
+        if start:
+            if self.document.current is None:
+                QMessageBox.information(self, "알림", "먼저 이미지를 열어주세요.")
+                self.background_panel.lasso_btn.blockSignals(True)
+                self.background_panel.lasso_btn.setChecked(False)
+                self.background_panel.lasso_btn.blockSignals(False)
+                return
+            self.canvas.begin_lasso_erase(self.document.current)
+            self.statusBar().showMessage("영역 선택 지우기: 캔버스에 지울 영역을 자유롭게 그려주세요.")
+        else:
+            self.canvas.end_lasso_erase()
+
     # ------------------------------------------------------------------ Undo/Redo/전체 초기화
     def _on_undo(self) -> None:
         self.document.undo()
-        self._refresh_canvas()
+        self._resync_active_panel()
         self._update_actions_enabled()
 
     def _on_redo(self) -> None:
         self.document.redo()
-        self._refresh_canvas()
+        self._resync_active_panel()
         self._update_actions_enabled()
 
     def _on_reset_all(self) -> None:
@@ -458,8 +480,15 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.Yes:
             return
         self.document.apply_result(self.document.original)
-        self._refresh_canvas()
+        self._resync_active_panel()
         self._update_actions_enabled()
+
+    def _resync_active_panel(self) -> None:
+        """Undo/Redo/전체초기화처럼 document.current가 바깥에서 바뀌었을 때, 캔버스가
+        들고 있던 도구별 상태(지우개 축소 프록시, 텍스트 오버레이)를 새 이미지 기준으로
+        다시 맞춘다. 이걸 안 하면 지우개 모드 중 되돌리기를 했을 때 캔버스가 예전
+        (리셋 전) 이미지를 계속 편집 대상으로 들고 있게 된다."""
+        self._activate_tool_panel(self._active_panel_index)
 
     def _update_actions_enabled(self) -> None:
         has_image = self.document.current is not None
@@ -475,7 +504,10 @@ class MainWindow(QMainWindow):
         if self.document.current is None:
             QMessageBox.information(self, "저장", "저장할 이미지가 없습니다.")
             return
-        if not self._current_path:
+        parent_dir = os.path.dirname(self._current_path) if self._current_path else ""
+        if not self._current_path or (parent_dir and not os.path.isdir(parent_dir)):
+            # 원본 폴더가 더 이상 존재하지 않으면(외장 드라이브 분리 등) 조용히 실패시키는 대신
+            # 다른 이름으로 저장 다이얼로그로 안내한다.
             self._on_save_as()
             return
         try:
@@ -485,11 +517,29 @@ class MainWindow(QMainWindow):
             return
         self.statusBar().showMessage(f"저장됨: {self._current_path}")
 
+    def _save_dialog_start_path(self) -> str:
+        """다이얼로그 시작 위치로 쓸 안전한 경로를 계산한다.
+
+        _current_path가 가리키는 폴더가 (외장 드라이브 분리, 임시폴더 정리 등으로) 더
+        이상 존재하지 않으면 그 경로를 그대로 네이티브 저장 다이얼로그에 넘겼을 때
+        "파일이 없습니다. 파일 이름을 확인하고 다시 시도하십시오" 같은 오류가 날 수
+        있다. 폴더가 실존할 때만 힌트로 사용하고, 아니면 빈 문자열로 OS 기본 위치를
+        쓰게 한다.
+        """
+        if not self._current_path:
+            return ""
+        parent = os.path.dirname(self._current_path)
+        if parent and not os.path.isdir(parent):
+            return os.path.basename(self._current_path)
+        return self._current_path
+
     def _on_save_as(self) -> None:
         if self.document.current is None:
             QMessageBox.information(self, "저장", "저장할 이미지가 없습니다.")
             return
-        path, _ = QFileDialog.getSaveFileName(self, "다른 이름으로 저장", self._current_path or "", _SAVE_FILTER)
+        path, _ = QFileDialog.getSaveFileName(
+            self, "다른 이름으로 저장", self._save_dialog_start_path(), _SAVE_FILTER
+        )
         if not path:
             return
         try:

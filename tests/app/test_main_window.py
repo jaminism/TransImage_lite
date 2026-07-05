@@ -96,6 +96,46 @@ def test_save_as_updates_current_path(qtbot, tmp_path, sample_rgb_image, monkeyp
     assert new_path.exists()
 
 
+def test_save_dialog_start_path_empty_when_no_current_path(qtbot):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    assert window._save_dialog_start_path() == ""
+
+
+def test_save_dialog_start_path_falls_back_when_directory_missing(qtbot, tmp_path):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    missing_dir_path = str(tmp_path / "no-such-folder" / "photo.png")
+    window._current_path = missing_dir_path
+
+    result = window._save_dialog_start_path()
+
+    assert result == "photo.png"
+
+
+def test_save_dialog_start_path_kept_when_directory_exists(qtbot, tmp_path):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    existing_path = str(tmp_path / "photo.png")
+    window._current_path = existing_path
+
+    assert window._save_dialog_start_path() == existing_path
+
+
+def test_quick_save_falls_back_to_save_as_when_original_dir_missing(qtbot, tmp_path, sample_rgb_image, monkeypatch):
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.document.load(sample_rgb_image)
+    window._current_path = str(tmp_path / "gone" / "photo.png")
+
+    called = []
+    monkeypatch.setattr(window, "_on_save_as", lambda: called.append(True))
+
+    window._on_quick_save()
+
+    assert called == [True]
+
+
 def test_reset_all_reverts_to_original(qtbot, sample_rgb_image):
     from core.processors.resize import resize_image
 

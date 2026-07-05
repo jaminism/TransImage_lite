@@ -16,9 +16,7 @@ def test_real_button_click_applies_text(qtbot, sample_rgb_image):
     assert window.canvas._text_item is not None
 
     before = window.document.current
-    buttons = panel.findChildren(QPushButton)
-    print("buttons:", [b.text() for b in buttons])
-    apply_btn = buttons[-1]
+    apply_btn = next(b for b in panel.findChildren(QPushButton) if "적용" in b.text())
     qtbot.mouseClick(apply_btn, Qt.LeftButton)
 
     assert window.document.current is not before

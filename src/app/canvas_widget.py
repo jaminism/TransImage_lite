@@ -5,9 +5,10 @@ from typing import Optional
 from PIL import Image, ImageDraw
 from PIL.ImageQt import ImageQt
 from PySide6.QtCore import QPointF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPixmap, QWheelEvent
+from PySide6.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QPen, QPixmap, QWheelEvent
 from PySide6.QtWidgets import (
     QGraphicsItem,
+    QGraphicsPathItem,
     QGraphicsPixmapItem,
     QGraphicsScene,
     QGraphicsSimpleTextItem,
@@ -78,6 +79,10 @@ class CanvasWidget(QGraphicsView):
         self._erase_preview: Optional[Image.Image] = None  # 화면 표시용 축소 프록시 (드래그 중 실시간 편집)
         self._erase_scale = 1.0  # preview_size = source_size * scale
         self._stroke_points: list[tuple[float, float, float]] = []  # (원본 좌표 x, y, 반지름)
+
+        self._lasso_mode = False
+        self._lasso_points: list[QPointF] = []  # 프록시(scene) 좌표
+        self._lasso_path_item: Optional[QGraphicsPathItem] = None
 
         self._busy_overlay = _BusyOverlay(self)
 
@@ -161,11 +166,8 @@ class CanvasWidget(QGraphicsView):
     # 한 번만 수행한다.
     _PREVIEW_MAX_DIM = 1600
 
-    def begin_erase(self, image: Image.Image, brush_radius: int) -> None:
-        self._erase_mode = True
-        self._brush_radius = brush_radius
+    def _setup_erase_proxy(self, image: Image.Image) -> None:
         self._erase_source = image.convert("RGBA")
-        self._stroke_points = []
 
         max_dim = max(self._erase_source.size)
         self._erase_scale = min(1.0, self._PREVIEW_MAX_DIM / max_dim) if max_dim > 0 else 1.0
@@ -185,6 +187,12 @@ class CanvasWidget(QGraphicsView):
             # (안 하면 mapToScene() 좌표가 이전 sceneRect 기준으로 어긋난다.)
             self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
 
+    def begin_erase(self, image: Image.Image, brush_radius: int) -> None:
+        self._erase_mode = True
+        self._brush_radius = brush_radius
+        self._stroke_points = []
+        self._setup_erase_proxy(image)
+
     def end_erase(self) -> None:
         self._erase_mode = False
         self._erasing = False
@@ -192,6 +200,67 @@ class CanvasWidget(QGraphicsView):
         self._erase_preview = None
         self._stroke_points = []
         self.setDragMode(QGraphicsView.ScrollHandDrag)
+
+    # ------------------------------------------------------------------ 영역 선택 지우기 (올가미)
+    def begin_lasso_erase(self, image: Image.Image) -> None:
+        self._lasso_mode = True
+        self._lasso_points = []
+        self._setup_erase_proxy(image)
+
+    def end_lasso_erase(self) -> None:
+        self._lasso_mode = False
+        self._lasso_points = []
+        if self._lasso_path_item is not None:
+            self._scene.removeItem(self._lasso_path_item)
+            self._lasso_path_item = None
+        self._erase_source = None
+        self._erase_preview = None
+        self.setDragMode(QGraphicsView.ScrollHandDrag)
+
+    def _update_lasso_path(self) -> None:
+        if len(self._lasso_points) < 2:
+            return
+        path = QPainterPath(self._lasso_points[0])
+        for point in self._lasso_points[1:]:
+            path.lineTo(point)
+        path.closeSubpath()
+
+        if self._lasso_path_item is None:
+            self._lasso_path_item = QGraphicsPathItem()
+            pen = QPen(QColor("#7c5cff"))
+            pen.setWidth(2)
+            pen.setStyle(Qt.DashLine)
+            self._lasso_path_item.setPen(pen)
+            self._lasso_path_item.setZValue(20)
+            self._scene.addItem(self._lasso_path_item)
+        self._lasso_path_item.setPath(path)
+
+    def _commit_lasso_selection(self) -> None:
+        if len(self._lasso_points) < 3 or self._erase_source is None:
+            self._lasso_points = []
+            if self._lasso_path_item is not None:
+                self._scene.removeItem(self._lasso_path_item)
+                self._lasso_path_item = None
+            return
+
+        src_points = [(p.x() / self._erase_scale, p.y() / self._erase_scale) for p in self._lasso_points]
+        result = self._erase_source.copy()
+        r, g, b, a = result.split()
+        ImageDraw.Draw(a).polygon(src_points, fill=0)
+        result = Image.merge("RGBA", (r, g, b, a))
+
+        self._erase_source = result
+        self._erase_preview = (
+            result.resize(self._erase_preview.size, Image.BILINEAR) if self._erase_scale < 1.0 else result.copy()
+        )
+        self._refresh_erase_pixmap()
+
+        self._lasso_points = []
+        if self._lasso_path_item is not None:
+            self._scene.removeItem(self._lasso_path_item)
+            self._lasso_path_item = None
+
+        self.erase_stroke_finished.emit(result.copy())
 
     def set_brush_radius(self, radius: int) -> None:
         self._brush_radius = radius
@@ -234,6 +303,11 @@ class CanvasWidget(QGraphicsView):
         self.erase_stroke_finished.emit(result.copy())
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
+        if self._lasso_mode and event.button() == Qt.LeftButton and self._erase_preview is not None:
+            self._lasso_points = [self.mapToScene(event.position().toPoint())]
+            self._update_lasso_path()
+            event.accept()
+            return
         if self._erase_mode and event.button() == Qt.LeftButton and self._erase_preview is not None:
             self._erasing = True
             self._erase_at(event.position().toPoint())
@@ -242,6 +316,11 @@ class CanvasWidget(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        if self._lasso_mode and self._lasso_points:
+            self._lasso_points.append(self.mapToScene(event.position().toPoint()))
+            self._update_lasso_path()
+            event.accept()
+            return
         if self._erase_mode and self._erasing:
             self._erase_at(event.position().toPoint())
             event.accept()
@@ -249,6 +328,10 @@ class CanvasWidget(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        if self._lasso_mode and self._lasso_points:
+            self._commit_lasso_selection()
+            event.accept()
+            return
         if self._erase_mode and self._erasing:
             self._erasing = False
             self._commit_erase_stroke()

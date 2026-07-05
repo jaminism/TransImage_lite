@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFontComboBox,
     QFormLayout,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -32,6 +33,7 @@ class TextPanel(QWidget):
 
     overlay_changed = Signal(dict)
     text_apply_requested = Signal(dict)
+    reset_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -77,6 +79,11 @@ class TextPanel(QWidget):
         apply_btn.setMinimumHeight(36)
         apply_btn.clicked.connect(self._on_apply)
 
+        reset_btn = QPushButton(" 초기화")
+        reset_btn.setIcon(icon("refresh"))
+        reset_btn.setToolTip("텍스트/크기/회전/색상/폰트를 기본값으로 되돌리고 미리보기를 지웁니다")
+        reset_btn.clicked.connect(self._on_reset)
+
         form = QFormLayout()
         form.addRow("텍스트", self.text_input)
         form.addRow("폰트", self.font_combo)
@@ -86,11 +93,15 @@ class TextPanel(QWidget):
         form.addRow("색상", self.color_btn)
         form.addRow(self.shadow_check)
 
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(apply_btn, stretch=1)
+        btn_row.addWidget(reset_btn)
+
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<b>텍스트 추가</b>"))
         layout.addWidget(QLabel("캔버스에 표시된 텍스트를 마우스로 드래그해 위치를 정하세요."))
         layout.addLayout(form)
-        layout.addWidget(apply_btn)
+        layout.addLayout(btn_row)
         layout.addStretch(1)
 
     def emit_current_overlay(self) -> None:
@@ -147,3 +158,26 @@ class TextPanel(QWidget):
         params = self.current_params()
         params["shadow"] = self.shadow_check.isChecked()
         self.text_apply_requested.emit(params)
+
+    def _on_reset(self) -> None:
+        self.text_input.blockSignals(True)
+        self.text_input.clear()
+        self.text_input.blockSignals(False)
+
+        self.font_combo.blockSignals(True)
+        self.font_combo.setCurrentFont(QFont("Arial"))
+        self.font_combo.blockSignals(False)
+
+        self.size_spin.blockSignals(True)
+        self.size_spin.setValue(48)
+        self.size_spin.blockSignals(False)
+
+        self.rotation_spin.blockSignals(True)
+        self.rotation_spin.setValue(0)
+        self.rotation_spin.blockSignals(False)
+
+        self._color = QColor(255, 255, 255)
+        self._update_color_button()
+        self.shadow_check.setChecked(True)
+
+        self.reset_requested.emit()

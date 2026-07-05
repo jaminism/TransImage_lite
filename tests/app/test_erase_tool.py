@@ -89,3 +89,31 @@ def test_erase_at_without_active_erase_is_noop(qtbot, sample_rgb_image):
     window.document.load(sample_rgb_image)
     # 지우개 모드가 아닌 상태에서 호출해도 예외가 나면 안 된다.
     window.canvas._erase_at(QPoint(1, 1))
+
+
+def test_reset_all_while_erasing_resyncs_erase_proxy_to_original(qtbot, sample_rgba_image):
+    """지우개 사용 중 전체 초기화를 하면, 캔버스의 지우개 프록시도 리셋된(원본) 이미지를
+    가리켜야 한다 — 안 그러면 이후 지우개질이 리셋 전의 낡은 이미지에 적용된다."""
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window.document.load(sample_rgba_image)
+    window._activate_tool_panel(PANEL_ERASE)
+
+    erased = sample_rgba_image.copy()
+    erased.putpixel((0, 0), (0, 0, 0, 0))
+    window.canvas.erase_stroke_finished.emit(erased)
+    assert window.document.current is erased
+
+    import PySide6.QtWidgets as qtw
+
+    orig_question = qtw.QMessageBox.question
+    qtw.QMessageBox.question = staticmethod(lambda *a, **k: qtw.QMessageBox.Yes)
+    try:
+        window._on_reset_all()
+    finally:
+        qtw.QMessageBox.question = orig_question
+
+    original_bytes = sample_rgba_image.convert("RGBA").tobytes()
+    assert window.document.current.tobytes() == original_bytes
+    # 핵심 회귀 검증: 지우개 프록시가 리셋된 원본을 가리켜야 한다 (erased 잔상이 아니라).
+    assert window.canvas._erase_source.tobytes() == original_bytes
