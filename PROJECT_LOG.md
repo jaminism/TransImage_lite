@@ -91,8 +91,9 @@ scripts\build.bat
 ```
 
 - `build.spec` — PyInstaller onefile 스펙. `rembg`/`onnxruntime`은 `collect_all()`로 네이티브 바이너리까지 수집, 아이콘은 `src/resources/icons/app.ico`
-- 산출물: `dist\TransPro.exe` (약 213MB, onnxruntime/opencv/Qt 포함이라 용량이 큼)
+- 산출물: `dist\TransPro.exe` (약 213~225MB, onnxruntime/opencv/Qt 포함이라 용량이 큼)
 - u2net 모델은 exe에 포함하지 않음 — 최초 실행 시 다운로드
+- `fonttools`는 순수 파이썬 패키지라 별도 hiddenimport 설정 없이 PyInstaller가 정적 분석만으로 정상 포함함 (2026-07-06 확대/축소 기능 빌드 시 확인)
 
 ## 다음 단계 / TODO
 
@@ -184,3 +185,4 @@ scripts\build.bat
   - 신규 테스트 4개 추가(투명 감지 함수, 불투명/투명 이미지별 체커보드 표시 여부, 이미지 전환 시 정리), 전체 107개 테스트 통과
 - **상태바 우측에 확대/축소(%) 컨트롤 추가** (이슈 [#21](https://github.com/jaminism/TransImage_lite/issues/21)): 크롬의 %-지정 줌 UX를 참고해 상태바 우측에 축소(-)/슬라이더(10~400%)/확대(+)/현재 %(클릭 시 프리셋 25~400% + "화면에 맞추기" 메뉴)/화면에 맞추기 버튼으로 구성된 `ZoomControl` 위젯 추가(`src/app/zoom_control.py`). `CanvasWidget`에 "화면에 맞추기"(fit)/"수동"(manual) 두 줌 모드를 도입해 `zoom_changed` 시그널 + `set_zoom_percent()`/`zoom_to_fit()` API로 컨트롤과 양방향 동기화. Ctrl+휠 줌이나 컨트롤로 수동 배율을 정하면 이후 창 크기를 조절해도 그 배율을 유지하고(예전엔 모든 창 리사이즈가 무조건 다시 맞춤이었음), 새 사진을 열면 다시 화면에 맞추기로 리셋됨. 신규 아이콘 3개 추가(`zoom_in`/`zoom_out`/`zoom_fit`)
   - 신규 테스트 14개 추가(줌 API 동작/클램핑/시그널, 리사이즈 시 수동↔fit 모드별 동작 차이, 컨트롤 위젯 단위 테스트, 컨트롤-캔버스 통합 동기화, 새 사진 열 때 리셋), 전체 121개 테스트 통과
+  - PR 병합 직후 `scripts\build.bat`로 exe 재빌드(`dist\TransPro.exe`, 약 225MB) 및 헤드리스 실행 스모크 테스트(4초간 정상 구동 확인) 완료
