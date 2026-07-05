@@ -5,7 +5,7 @@ from typing import Optional
 
 from PIL import Image
 from PIL.ImageQt import ImageQt
-from PySide6.QtCore import QPointF, QRectF, Qt, QTimer
+from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QLinearGradient, QPainter, QPixmap, QRadialGradient, QWheelEvent
 from PySide6.QtWidgets import (
     QGraphicsItem,
@@ -177,12 +177,23 @@ class _BusyOverlay(QWidget):
         painter.end()
 
 
+_MIN_ZOOM_PERCENT = 10.0
+_MAX_ZOOM_PERCENT = 400.0
+
+
 class CanvasWidget(QGraphicsView):
     """이미지 표시/줌/팬/텍스트 드래그를 담당하는 캔버스.
 
     실제 편집 로직(픽셀 계산)은 포함하지 않는다 — core.processors가 반환한 이미지를
     set_image()로 전달받아 그리기만 담당한다.
+
+    줌은 "화면에 맞추기"(fit)와 "수동"(manual) 두 모드를 오간다. 도구를 전환하거나
+    창 크기를 조절할 때는 fit 모드일 때만 다시 fitInView()로 맞추고, 사용자가
+    Ctrl+휠이나 확대/축소 컨트롤로 직접 배율을 정하면 manual 모드로 바뀌어 이후
+    창 크기 조절에는 영향받지 않는다. 새 사진을 열 때는 다시 fit으로 리셋된다.
     """
+
+    zoom_changed = Signal(float)
 
     def __init__(self) -> None:
         super().__init__()
@@ -197,6 +208,7 @@ class CanvasWidget(QGraphicsView):
         self._checkerboard_item: Optional[QGraphicsRectItem] = None
         self._text_handle: Optional[QGraphicsRectItem] = None
         self._text_item: Optional[QGraphicsPixmapItem] = None
+        self._zoom_mode = "fit"  # "fit" | "manual"
 
         self._busy_overlay = _BusyOverlay(self)
 
@@ -208,6 +220,8 @@ class CanvasWidget(QGraphicsView):
         self._text_handle = None
         self._text_item = None
         if image is None:
+            self._zoom_mode = "fit"
+            self._emit_zoom_changed()
             return
         qimage = ImageQt(image)
         pixmap = QPixmap.fromImage(qimage)
@@ -220,12 +234,44 @@ class CanvasWidget(QGraphicsView):
 
         self._pixmap_item = self._scene.addPixmap(pixmap)
         self._scene.setSceneRect(pixmap.rect())
-        self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
+        if self._zoom_mode == "fit":
+            self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
+        self._emit_zoom_changed()
+
+    def reset_zoom_mode(self) -> None:
+        """새 사진을 열 때 호출 — 이전 사진에서 수동으로 확대/축소했더라도 새
+        사진은 화면에 맞추기부터 시작한다."""
+        self._zoom_mode = "fit"
+
+    # ------------------------------------------------------------------ 확대/축소
+    def current_zoom_percent(self) -> float:
+        return round(self.transform().m11() * 100, 1)
+
+    def set_zoom_percent(self, percent: float) -> None:
+        if self._pixmap_item is None:
+            return
+        percent = max(_MIN_ZOOM_PERCENT, min(_MAX_ZOOM_PERCENT, percent))
+        self._zoom_mode = "manual"
+        factor = percent / 100.0
+        self.resetTransform()
+        self.scale(factor, factor)
+        self._emit_zoom_changed()
+
+    def zoom_to_fit(self) -> None:
+        self._zoom_mode = "fit"
+        if self._pixmap_item is not None:
+            self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
+        self._emit_zoom_changed()
+
+    def _emit_zoom_changed(self) -> None:
+        self.zoom_changed.emit(self.current_zoom_percent())
 
     def wheelEvent(self, event: QWheelEvent) -> None:
         if event.modifiers() & Qt.ControlModifier:
             factor = 1.15 if event.angleDelta().y() > 0 else 1 / 1.15
             self.scale(factor, factor)
+            self._zoom_mode = "manual"
+            self._emit_zoom_changed()
         else:
             super().wheelEvent(event)
 
@@ -234,10 +280,12 @@ class CanvasWidget(QGraphicsView):
         self._busy_overlay.setGeometry(self.rect())
         # 도구를 전환할 때(set_image -> fitInView)는 이미지가 새 캔버스 크기에 맞춰
         # 다시 스케일되는데, 창 크기만 조절했을 때는 그러지 않아 사진이 그대로
-        # 남아있는 것처럼 보이는 문제가 있었다. 창 리사이즈 시에도 동일하게 다시
-        # 맞춘다.
-        if self._pixmap_item is not None:
+        # 남아있는 것처럼 보이는 문제가 있었다. "화면에 맞추기" 모드일 때만 창
+        # 리사이즈 시에도 동일하게 다시 맞춘다 — 사용자가 수동으로 확대/축소한
+        # 뒤에는 창 크기를 조절해도 그 배율을 그대로 유지한다.
+        if self._pixmap_item is not None and self._zoom_mode == "fit":
             self.fitInView(self._pixmap_item, Qt.KeepAspectRatio)
+            self._emit_zoom_changed()
 
     # ------------------------------------------------------------------ 진행 중 표시
     def set_busy(self, busy: bool, message: str = "처리 중...") -> None:
