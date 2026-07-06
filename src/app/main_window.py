@@ -119,6 +119,7 @@ class MainWindow(QMainWindow):
         self.home_widget.open_requested.connect(self._open_image)
         self.home_widget.quick_action_requested.connect(self._on_home_quick_action)
         self.home_widget.recent_file_opened.connect(self._open_path)
+        self.home_widget.clear_recent_requested.connect(self._on_clear_recent_files)
 
         self.resize_panel = ResizePanel()
         self.enhance_panel = EnhancePanel()
@@ -448,6 +449,18 @@ class MainWindow(QMainWindow):
         recent = recent[:_MAX_RECENT_FILES]
         self._settings.setValue("recentFiles", recent)
         self.home_widget.set_recent_files(recent)
+
+    def _on_clear_recent_files(self) -> None:
+        reply = QMessageBox.question(
+            self,
+            "최근 작업 지우기",
+            "최근 작업 목록을 모두 지울까요? (원본 이미지 파일은 삭제되지 않습니다)",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self._settings.setValue("recentFiles", [])
+        self.home_widget.set_recent_files([])
 
     # ------------------------------------------------------------------ 미리보기 / 적용
     def _on_preview_requested(self, fn, kwargs: dict) -> None:
