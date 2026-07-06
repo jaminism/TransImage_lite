@@ -11,9 +11,14 @@ datas = [("src/resources", "resources")]
 binaries = []
 hiddenimports = []
 
-# rembg/onnxruntime bundle native binaries and data files that PyInstaller's
-# static import analysis can miss — collect them explicitly.
-for pkg in ("rembg", "onnxruntime"):
+# rembg/onnxruntime/pymatting bundle native binaries and data files that
+# PyInstaller's static import analysis can miss — collect them explicitly.
+# pymatting (rembg's alpha-matting dependency) reads its own package metadata
+# via importlib.metadata.version() at import time and does not catch
+# PackageNotFoundError, unlike rembg itself; without its dist-info bundled,
+# `from rembg import remove` fails with an ImportError at runtime (surfaced
+# to the user as "배경 제거 기능을 사용할 수 없습니다").
+for pkg in ("rembg", "onnxruntime", "pymatting"):
     pkg_datas, pkg_binaries, pkg_hidden = collect_all(pkg)
     datas += pkg_datas
     binaries += pkg_binaries
