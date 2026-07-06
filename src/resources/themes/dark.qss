@@ -31,6 +31,27 @@ QFrame#sidebarCard, QFrame#canvasCard, QFrame#propertiesCard {
     border-radius: 18px;
 }
 
+/* 속성 패널 하단에 항상 고정 표시되는 "정보" 박스(IMG_9186.png 참고 디자인) */
+QFrame#infoCard {
+    background-color: #232333;
+    border: 1px solid #2c2740;
+    border-radius: 14px;
+    padding: 10px;
+}
+
+QLabel#infoCardTitle {
+    font-weight: 700;
+}
+
+QLabel#infoCardLabel {
+    color: #a8abb4;
+    font-size: 12px;
+}
+
+QLabel#infoCardValue {
+    font-size: 12px;
+}
+
 QSplitter#mainSplitter::handle {
     background-color: transparent;
 }

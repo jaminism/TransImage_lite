@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
 from app.canvas_widget import CanvasWidget
 from app.home_widget import HomeWidget
 from app.icons import icon
+from app.info_panel import ImageInfoPanel
 from app.panels.background_panel import BackgroundPanel
 from app.panels.enhance_panel import EnhancePanel
 from app.panels.quality_panel import QualityPanel
@@ -126,6 +127,7 @@ class MainWindow(QMainWindow):
         self.quality_panel = QualityPanel()
         self.text_panel = TextPanel()
         self.background_panel = BackgroundPanel()
+        self.info_panel = ImageInfoPanel()
 
         self._panels = [
             self.resize_panel,
@@ -183,7 +185,16 @@ class MainWindow(QMainWindow):
         # 영역이 아니라, 간격을 두고 모서리가 둥근 독립된 카드로 분리해 표시한다.
         sidebar_card = self._wrap_in_card(self.sidebar, "sidebarCard", fixed_width=208)
         canvas_card = self._wrap_in_card(self.center_stack, "canvasCard")
-        properties_card = self._wrap_in_card(self.properties_panel, "propertiesCard", fixed_width=340)
+
+        # 참고 디자인처럼 "정보" 박스는 어떤 편집 도구를 선택해도(properties_panel
+        # QStackedWidget 전환과 무관하게) 항상 속성 패널 하단에 고정 표시된다.
+        properties_card = QFrame()
+        properties_card.setObjectName("propertiesCard")
+        properties_card.setFixedWidth(340)
+        properties_card_layout = QVBoxLayout(properties_card)
+        properties_card_layout.setContentsMargins(10, 10, 10, 10)
+        properties_card_layout.addWidget(self.properties_panel, 1)
+        properties_card_layout.addWidget(self.info_panel)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.setObjectName("mainSplitter")
@@ -433,6 +444,7 @@ class MainWindow(QMainWindow):
         self.document = ImageDocument()
         self._current_path = None
         self.canvas.set_image(None)
+        self.info_panel.set_info(None, None)
         self.center_stack.setCurrentIndex(STACK_HOME)
         self._update_actions_enabled()
         self.statusBar().showMessage("이미지를 열어주세요 (Ctrl+O)")
@@ -699,6 +711,7 @@ class MainWindow(QMainWindow):
         except Exception as exc:  # noqa: BLE001
             QMessageBox.critical(self, "저장 실패", f"이미지를 저장할 수 없습니다:\n{exc}")
             return
+        self.info_panel.set_info(self._current_path, self.document.current)
         self.statusBar().showMessage(f"저장됨: {self._current_path}")
 
     def _save_dialog_start_path(self) -> str:
@@ -733,6 +746,7 @@ class MainWindow(QMainWindow):
             return
         self._current_path = path
         self._remember_recent_file(path)
+        self.info_panel.set_info(self._current_path, self.document.current)
         self.statusBar().showMessage(f"저장됨: {path}")
 
     def _on_print(self) -> None:
@@ -763,6 +777,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ 캔버스 갱신
     def _refresh_canvas(self) -> None:
         self.canvas.set_image(self.document.current)
+        self.info_panel.set_info(self._current_path, self.document.current)
 
 
 __all__ = ["MainWindow", "TOOL_PANEL_LABELS", "SUPPORTED_EXTENSIONS"]
