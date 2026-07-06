@@ -85,6 +85,7 @@ class HomeWidget(QWidget):
     open_requested = Signal()
     quick_action_requested = Signal(str)  # "enhance" | "text" | "background"
     recent_file_opened = Signal(str)
+    clear_recent_requested = Signal()
 
     def __init__(self) -> None:
         super().__init__()
@@ -125,7 +126,17 @@ class HomeWidget(QWidget):
         center.addSpacing(24)
         center.addLayout(cards_layout)
         center.addSpacing(24)
-        center.addWidget(QLabel("<b>최근 작업</b>"))
+
+        recent_header = QHBoxLayout()
+        recent_header.addWidget(QLabel("<b>최근 작업</b>"))
+        recent_header.addStretch(1)
+        self._clear_recent_button = QPushButton("지우기")
+        self._clear_recent_button.setObjectName("clearRecentButton")
+        self._clear_recent_button.setCursor(Qt.PointingHandCursor)
+        self._clear_recent_button.clicked.connect(self.clear_recent_requested.emit)
+        recent_header.addWidget(self._clear_recent_button)
+
+        center.addLayout(recent_header)
         center.addWidget(self._recent_empty_label)
         center.addWidget(recent_scroll)
 
@@ -155,6 +166,7 @@ class HomeWidget(QWidget):
 
         existing = [p for p in paths if Path(p).exists()]
         self._recent_empty_label.setVisible(not existing)
+        self._clear_recent_button.setVisible(bool(existing))
 
         for path in existing:
             card = _RecentFileCard(path)

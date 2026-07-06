@@ -128,3 +128,42 @@ def test_home_widget_filters_out_missing_recent_files(qtbot, tmp_path):
     widget.set_recent_files([missing])
 
     assert not widget._recent_empty_label.isHidden()
+
+
+def test_home_widget_clear_recent_button_visibility(qtbot, tmp_path, sample_rgb_image):
+    from app.home_widget import HomeWidget
+
+    widget = HomeWidget()
+    qtbot.addWidget(widget)
+    assert widget._clear_recent_button.isHidden()
+
+    path = tmp_path / "sample.png"
+    sample_rgb_image.save(path)
+    widget.set_recent_files([str(path)])
+    assert not widget._clear_recent_button.isHidden()
+
+    widget.set_recent_files([])
+    assert widget._clear_recent_button.isHidden()
+
+
+def test_clear_recent_files_asks_confirmation_and_empties_list(
+    qtbot, tmp_path, sample_rgb_image, monkeypatch
+):
+    path = tmp_path / "sample.png"
+    sample_rgb_image.save(path)
+
+    window = MainWindow()
+    qtbot.addWidget(window)
+    window._open_path(str(path))
+    window._on_close_image()
+
+    assert str(path) in window._settings.value("recentFiles", [], type=list)
+
+    monkeypatch.setattr(main_window_module.QMessageBox, "question", lambda *a, **k: main_window_module.QMessageBox.No)
+    window.home_widget.clear_recent_requested.emit()
+    assert str(path) in window._settings.value("recentFiles", [], type=list)
+
+    monkeypatch.setattr(main_window_module.QMessageBox, "question", lambda *a, **k: main_window_module.QMessageBox.Yes)
+    window.home_widget.clear_recent_requested.emit()
+    assert window._settings.value("recentFiles", [], type=list) == []
+    assert window.home_widget._clear_recent_button.isHidden()
